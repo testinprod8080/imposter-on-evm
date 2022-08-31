@@ -172,7 +172,7 @@ contract GameManagerTest is Test {
   function testCannotDoActionWhenNotStarted() public {
     gameManager.join();
     vm.expectRevert(bytes("Current game state does not allow actions"));
-    gameManager.doAction(uint(GameActions.CompleteTask), address(0));
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0), 1);
   }
 
   function testCannotDoActionWhenEnded() public {
@@ -185,21 +185,57 @@ contract GameManagerTest is Test {
 
     // act & assert
     vm.expectRevert(bytes("Current game state does not allow actions"));
-    gameManager.doAction(uint(GameActions.CompleteTask), address(0));
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0), 1);
+  }
+
+  function testCannotStartTaskIfAlreadyStarted() public {
+    // arrange
+    startGame(4);
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0), 1);
+
+    // act & assert
+    vm.expectRevert(bytes("Action rejected"));
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0), 2);
+  }
+
+  function testCannotFinishTaskIfNotEnoughTimePassed() public {
+    // arrange
+    startGame(4);
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0), 2);
+
+    // act & assert
+    vm.expectRevert(bytes("Action rejected"));
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0), 2);
   }
 
   function testCompleteTask() public {
     // arrange
-    gameManager.join();
-    stdstore
-      .target(address(gameManager))
-      .sig("gameState()")
-      .checked_write(uint(GameStates.Started));
+    startGame(4);
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0), 1);
 
     // act
-    gameManager.doAction(uint(GameActions.CompleteTask), address(0));
+    skip(10);
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0), 1);
 
     // assert
+    assertEq(gameManager.tasksCompleted(), 1);
+  }
+
+  function testCompleteTaskWhenDead() public {
+    // arrange
+    startGame(4);
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0), 1);
+    changePrank(players[0]);
+    gameManager.doAction(uint(GameActions.KillPlayer), players[3], 0);
+
+    // act
+    skip(10);
+    changePrank(players[3]);
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0), 1);
+
+    // assert
+    (, bool alive,) = gameManager.players(players[3]);
+    assertFalse(alive);
     assertEq(gameManager.tasksCompleted(), 1);
   }
 
@@ -212,18 +248,18 @@ contract GameManagerTest is Test {
 
     // act
     vm.expectRevert(bytes("Player did not join this game"));
-    gameManager.doAction(uint(GameActions.CompleteTask), address(0));
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0), 1);
   }
 
   function testCannotKillDeadPlayer() public {
     // arrange
     startGame(4);
     changePrank(players[0]);
-    gameManager.doAction(uint(GameActions.KillPlayer), players[1]);
+    gameManager.doAction(uint(GameActions.KillPlayer), players[1], 0);
 
     // act & assert
     vm.expectRevert(bytes("Action rejected"));
-    gameManager.doAction(uint(GameActions.KillPlayer), players[1]);
+    gameManager.doAction(uint(GameActions.KillPlayer), players[1], 0);
   }
 
   function testCannotKillPlayerNotJoined() public {
@@ -236,19 +272,19 @@ contract GameManagerTest is Test {
     // act & assert
     changePrank(players[0]);
     vm.expectRevert(bytes("Action rejected"));
-    gameManager.doAction(uint(GameActions.KillPlayer), players[4]);
+    gameManager.doAction(uint(GameActions.KillPlayer), players[4], 0);
   }
 
   function testCannotKillWhileDead() public {
     // arrange
     startGame(10);
     changePrank(players[1]);
-    gameManager.doAction(uint(GameActions.KillPlayer), players[0]);
+    gameManager.doAction(uint(GameActions.KillPlayer), players[0], 0);
 
     // act & assert
     changePrank(players[0]);
     vm.expectRevert(bytes("Action rejected"));
-    gameManager.doAction(uint(GameActions.KillPlayer), players[3]);
+    gameManager.doAction(uint(GameActions.KillPlayer), players[3], 0);
   }
 
   function testCannotKillIfNotImposter() public {
@@ -257,7 +293,7 @@ contract GameManagerTest is Test {
 
     // act & assert
     vm.expectRevert("Action rejected");
-    gameManager.doAction(uint(GameActions.KillPlayer), players[1]);
+    gameManager.doAction(uint(GameActions.KillPlayer), players[1], 0);
   }
 
   function testKill() public {
@@ -266,7 +302,7 @@ contract GameManagerTest is Test {
 
     // act
     changePrank(players[0]);
-    gameManager.doAction(uint(GameActions.KillPlayer), players[1]);
+    gameManager.doAction(uint(GameActions.KillPlayer), players[1], 0);
 
     // assert
     (, bool alive,) = gameManager.players(players[1]);
@@ -302,7 +338,7 @@ contract GameManagerTest is Test {
     // arrange
     startGame(4);
     changePrank(players[0]);
-    gameManager.doAction(uint(GameActions.KillPlayer), players[1]);
+    gameManager.doAction(uint(GameActions.KillPlayer), players[1], 0);
 
     // act & assert
     changePrank(players[1]);
@@ -379,7 +415,7 @@ contract GameManagerTest is Test {
     // arrange
     startGame(4);
     changePrank(players[0]);
-    gameManager.doAction(uint(GameActions.KillPlayer), players[2]);
+    gameManager.doAction(uint(GameActions.KillPlayer), players[2], 0);
     gameManager.callVote();
 
     // act & assert
@@ -405,7 +441,7 @@ contract GameManagerTest is Test {
     // arrange
     startGame(4);
     changePrank(players[0]);
-    gameManager.doAction(uint(GameActions.KillPlayer), players[1]);
+    gameManager.doAction(uint(GameActions.KillPlayer), players[1], 0);
     gameManager.callVote();
     
     // act & assert
@@ -579,8 +615,8 @@ contract GameManagerTest is Test {
 
     // act
     changePrank(players[0]);
-    gameManager.doAction(uint(GameActions.KillPlayer), players[1]);
-    gameManager.doAction(uint(GameActions.KillPlayer), players[2]);
+    gameManager.doAction(uint(GameActions.KillPlayer), players[1], 0);
+    gameManager.doAction(uint(GameActions.KillPlayer), players[2], 0);
 
     // assert
     assertEq(uint(gameManager.gameState()), uint(GameStates.Ended));
@@ -607,6 +643,68 @@ contract GameManagerTest is Test {
     assertEq(uint(gameManager.gameOutcome()), uint(GameOutcomes.RealOnesWin));
   }
 
+  function testRealOnesWinByTasks() public {
+    // arrange
+    startGame(4);
+
+    // act - player 4 finishes all tasks
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0), 1);
+    skip(10);
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0), 1);
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0), 2);
+    skip(20);
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0), 2);
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0), 3);
+    skip(30);
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0), 3);
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0), 4);
+    skip(40);
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0), 4);
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0), 5);
+    skip(50);
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0), 5);
+
+    // act - player 3 finishes all tasks
+    changePrank(players[2]);
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0), 1);
+    skip(10);
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0), 1);
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0), 2);
+    skip(20);
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0), 2);
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0), 3);
+    skip(30);
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0), 3);
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0), 4);
+    skip(40);
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0), 4);
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0), 5);
+    skip(50);
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0), 5);
+
+    // act - player 2 finishes all tasks
+    changePrank(players[1]);
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0), 1);
+    skip(10);
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0), 1);
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0), 2);
+    skip(20);
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0), 2);
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0), 3);
+    skip(30);
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0), 3);
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0), 4);
+    skip(40);
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0), 4);
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0), 5);
+    skip(50);
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0), 5);
+
+    // assert
+    assertEq(uint(gameManager.gameState()), uint(GameStates.Ended));
+    assertEq(uint(gameManager.gameOutcome()), uint(GameOutcomes.RealOnesWin));
+  }
+
   // Helper functions
   function startGame(uint numPlayers) private {
     for (uint i = 0; i < numPlayers; i++) {
@@ -614,21 +712,5 @@ contract GameManagerTest is Test {
       gameManager.join();
     }
     gameManager.start();
-  }
-
-  function testRealOnesWinByTasks() public {
-    // arrange
-    startGame(4);
-
-    // act
-    gameManager.doAction(uint(GameActions.CompleteTask), address(0));
-    gameManager.doAction(uint(GameActions.CompleteTask), address(0));
-    gameManager.doAction(uint(GameActions.CompleteTask), address(0));
-    gameManager.doAction(uint(GameActions.CompleteTask), address(0));
-    gameManager.doAction(uint(GameActions.CompleteTask), address(0));
-
-    // assert
-    assertEq(uint(gameManager.gameState()), uint(GameStates.Ended));
-    assertEq(uint(gameManager.gameOutcome()), uint(GameOutcomes.RealOnesWin));
   }
 }

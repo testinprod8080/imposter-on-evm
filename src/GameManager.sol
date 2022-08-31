@@ -36,10 +36,17 @@ contract GameManager {
     uint votes;
   }
 
+  struct TaskInProgress {
+    uint id;
+    uint startTime;
+  }
+
+  string constant ACTION_REJECTED_ERROR_MSG = "Action rejected";
+
   uint immutable maxPlayers;
   uint immutable minPlayers;
   uint immutable voteCallCooldown;
-  uint immutable tasksCompletedToWin = 5;
+  uint immutable numTasks = 5;
 
   uint public lastVoteCallTimestamp;
   uint public numAlivePlayers = 0;
@@ -51,10 +58,13 @@ contract GameManager {
   mapping(uint => mapping(address => bool)) public voted;
   GameStates public gameState = GameStates.NotStarted;
   GameOutcomes public gameOutcome = GameOutcomes.Stalemate;
+  mapping(uint => uint) public tasks;
 
   address[] private playerAddresses;
-  address[] private realOnes;
-  address[] private imposters;
+  address[] private imposters; // TODO hide
+  address[] private realOnes; // TODO hide
+  mapping(address => TaskInProgress) private realOnesTaskInProgress; // TODO hide
+  mapping(address => uint[]) private realOnesCompletedTasks; // TODO hide
   TopVotedPlayer[] private topVotedPlayers;
 
   modifier onlyPlayer(address player) {
@@ -92,6 +102,12 @@ contract GameManager {
     maxPlayers = maxPlayers_;
     minPlayers = minPlayers_;
     voteCallCooldown = voteCallCooldown_;
+
+    tasks[1] = 10;
+    tasks[2] = 20;
+    tasks[3] = 30;
+    tasks[4] = 40;
+    tasks[5] = 50;
   }
 
   function join() 
@@ -143,7 +159,7 @@ contract GameManager {
 
   // TODO input paramaters should be private
   // TODO should not be able to connect a resulting state to the call txn
-  function doAction(uint action, address target) 
+  function doAction(uint action, address target, uint taskId) 
     external 
     onlyPlayer(msg.sender)
     correctGameState(
@@ -151,10 +167,17 @@ contract GameManager {
       "Current game state does not allow actions"
     )
   {
-    if (GameActions(action) == GameActions.CompleteTask) 
-      completeTaskAction();
+    if (
+      GameActions(action) == GameActions.CompleteTask
+      && isImposter(msg.sender) == false
+    ) {
+      if (realOnesTaskInProgress[msg.sender].id == 0)
+        startTask(taskId);
+      else
+        finishTask(taskId);
+    }
     else if (GameActions(action) == GameActions.KillPlayer) 
-      killPlayerAction(target);
+      killPlayer(target);
   }
 
   function callVote() 
@@ -272,16 +295,34 @@ contract GameManager {
     }
   }
 
-  function completeTaskAction() private {
+  function startTask(uint taskId) private {
+    require(realOnesTaskInProgress[msg.sender].id == 0, ACTION_REJECTED_ERROR_MSG);
+    require(isCompletedTask(taskId) == false, ACTION_REJECTED_ERROR_MSG);
+
+    realOnesTaskInProgress[msg.sender] = TaskInProgress({ 
+      id: taskId, 
+      startTime: block.timestamp
+    });
+  }
+
+  function finishTask(uint taskId) private {
+    require(realOnesTaskInProgress[msg.sender].id == taskId, ACTION_REJECTED_ERROR_MSG);
+    require(
+      block.timestamp - realOnesTaskInProgress[msg.sender].startTime >= tasks[taskId], 
+      ACTION_REJECTED_ERROR_MSG
+    );
+
     tasksCompleted++;
+    realOnesCompletedTasks[msg.sender].push(taskId);
+    realOnesTaskInProgress[msg.sender].id = 0;
 
     resolveWinConditionsByTasks();
   }
 
-  function killPlayerAction(address target) private {
-    require(players[msg.sender].alive == true, "Action rejected");
-    require(players[target].alive == true, "Action rejected");
-    require(isImposter(msg.sender), "Action rejected");
+  function killPlayer(address target) private {
+    require(players[msg.sender].alive == true, ACTION_REJECTED_ERROR_MSG);
+    require(players[target].alive == true, ACTION_REJECTED_ERROR_MSG);
+    require(isImposter(msg.sender), ACTION_REJECTED_ERROR_MSG);
     
     players[target].alive = false;
 
@@ -319,12 +360,22 @@ contract GameManager {
   }
 
   function resolveWinConditionsByTasks() private returns (bool winConditionMet) {
-    if (tasksCompleted >= tasksCompletedToWin) {
+    if (tasksCompleted >= numTasks * realOnes.length) {
       changeGameState(GameStates.Ended);
       gameOutcome = GameOutcomes.RealOnesWin;
       return true;
     }
 
+    return false;
+  }
+
+  function isCompletedTask(uint taskId) private view returns (bool completed) {
+    uint[] memory completedTasks = realOnesCompletedTasks[msg.sender];
+
+    for (uint i = 0; i < completedTasks.length; i++) {
+      if (completedTasks[i] == taskId)
+        return true;
+    }
     return false;
   }
 

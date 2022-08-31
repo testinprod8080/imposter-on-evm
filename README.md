@@ -15,21 +15,19 @@ Imposters win if all Real Ones are dead or have left the game
 ### For Real Ones
 Real Ones can win with either of the following conditions:
 - All Imposters are dead or have left the game
-- All tasks have been successfully completed
+- All tasks have been successfully completed. Every Real One player has to complete all tasks once
 
 ## Actions
 
 ### Imposter
-- [ ] startTask() - does nothing
-- [ ] finishTask() - does nothing
+- [ ] doTask() - does nothing
 - [x] killPlayer()
 - [ ] sabotage() - stops and prevents task work
 - [ ] fix() - does nothing
 - [ ] checkImposters - can call anytime to see who the other Imposters are
 
 ### Real Ones
-- [ ] startTask(task)
-- [ ] finishTask(task)
+- [ ] doTask()
 - [ ] fix() - reset game when sabotaged
 - [ ] checkImposters() - only callable once game has ended
 
@@ -37,6 +35,16 @@ Real Ones can win with either of the following conditions:
 - [x] callVote()
 - [x] vote()
 - [ ] checkDead()
+
+## Tasks
+
+Imposters can call this action to broadcast that they are doing an action while only pretending to do it.
+
+For Real Ones, completing a task requires two actions:
+1. Call doTask() once to start the task
+1. After the required time-to-complete has passed for the task started, call doTask() again to finish the task
+
+When a Real One has started a task, they cannot perform any other tasks unless they finish, leave unfinished, or a vote is called.
 
 # Game Design Thoughts
 
