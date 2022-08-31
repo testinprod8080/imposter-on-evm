@@ -4,6 +4,7 @@ pragma solidity ^0.8.16;
 import "./Structs.sol";
 import "./Enums.sol";
 import "./Errors.sol";
+import "./utils/RandomHelper.sol";
 
 /// @title A title that should describe the contract/interface
 /// @author The name of the author
@@ -107,7 +108,7 @@ contract GameManager {
     });
   }
 
-  function start() 
+  function start(string memory salt) 
     external 
     onlyPlayer(msg.sender)
   {
@@ -119,7 +120,7 @@ contract GameManager {
 
     numAlivePlayers = playerAddresses.length;
 
-    setTeams();
+    setTeams(salt);
 
     lastVoteCallTimestamp = block.timestamp;
     changeGameState(Enums.GameStates.Started);
@@ -265,8 +266,18 @@ contract GameManager {
     playerAddresses.pop();
   }
 
-  function setTeams() private {
+  function setTeams(string memory salt) private {
     uint numImposters = playerAddresses.length / 4;
+
+    // uint[] memory imposterIndices = RandomHelper.pickRandomFromArray(
+    //   numImposters, 
+    //   playerAddresses.length, 
+    //   salt
+    // );
+
+    // for (uint i = 0; i < imposterIndices.length; i++) {
+    //   imposters.push(playerAddresses[imposterIndices[i]]);
+    // }
 
     for (uint i = 0; i < playerAddresses.length; i++) {
       // TODO needs to be random

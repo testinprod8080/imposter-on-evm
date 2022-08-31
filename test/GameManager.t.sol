@@ -108,7 +108,7 @@ contract GameManagerTest is Test {
 
   function testCannotStartWhenNotJoined() public {
     vm.expectRevert(bytes("Player did not join this game"));
-    gameManager.start();
+    gameManager.start("");
   }
 
   function testCannotStartWhenAlreadyStarted() public {
@@ -121,7 +121,7 @@ contract GameManagerTest is Test {
 
     // act & assert
     vm.expectRevert(bytes("Current game state does not allow starting game"));
-    gameManager.start();
+    gameManager.start("");
   }
 
   function testCannotStartWithNotEnoughPlayers() public {
@@ -130,7 +130,7 @@ contract GameManagerTest is Test {
 
     // act & assert
     vm.expectRevert(bytes("Not enough players to start game"));
-    gameManager.start();
+    gameManager.start("");
   }
 
   function testStart() public {
@@ -144,7 +144,7 @@ contract GameManagerTest is Test {
     gameManager.join();
 
     // act
-    gameManager.start();
+    gameManager.start("");
 
     // assert
     assertEq(uint(gameManager.gameState()), uint(Enums.GameStates.Started));
@@ -617,7 +617,7 @@ contract GameManagerTest is Test {
     gameManager.join();
 
     // act
-    gameManager.start();
+    gameManager.start("");
 
     // assert
     assertEq(gameManager.getImposterCount(), 1);
@@ -647,7 +647,7 @@ contract GameManagerTest is Test {
     gameManager.join();
 
     // act
-    gameManager.start();
+    gameManager.start("");
 
     // assert
     assertEq(gameManager.getImposterCount(), 2);
@@ -757,6 +757,6 @@ contract GameManagerTest is Test {
       changePrank(players[i]);
       gameManager.join();
     }
-    gameManager.start();
+    gameManager.start("");
   }
 }
