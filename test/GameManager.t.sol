@@ -239,6 +239,20 @@ contract GameManagerTest is Test {
     assertEq(gameManager.tasksCompleted(), 1);
   }
 
+  function testLeaveStartedTask() public {
+    // arrange
+    startGame(4);
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0), 1);
+
+    // act
+    skip(100);
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0), 0);
+
+    // assert
+    gameManager.callVote();
+    assertEq(gameManager.tasksCompleted(), 0);
+  }
+
   function testDoTaskAsImposterDoesNotIncrementCompletedTasks() public {
     // arrange
     startGame(4);

@@ -173,8 +173,12 @@ contract GameManager {
     ) {
       if (realOnesTaskInProgress[msg.sender].id == 0)
         startTask(taskId);
-      else
-        finishTask(taskId);
+      else {
+        if (taskId == 0)
+          leaveTask();
+        else
+          finishTask(taskId);
+      }
     }
     else if (GameActions(action) == GameActions.KillPlayer) 
       killPlayer(target);
@@ -310,7 +314,10 @@ contract GameManager {
   }
 
   function finishTask(uint taskId) private {
-    require(realOnesTaskInProgress[msg.sender].id == taskId, ACTION_REJECTED_ERROR_MSG);
+    require(
+      realOnesTaskInProgress[msg.sender].id == taskId, 
+      ACTION_REJECTED_ERROR_MSG
+    );
     require(
       block.timestamp - realOnesTaskInProgress[msg.sender].startTime >= tasks[taskId], 
       ACTION_REJECTED_ERROR_MSG
@@ -321,6 +328,10 @@ contract GameManager {
     realOnesTaskInProgress[msg.sender].id = 0;
 
     resolveWinConditionsByTasks();
+  }
+
+  function leaveTask() private {
+    realOnesTaskInProgress[msg.sender].id = 0;
   }
 
   function killPlayer(address target) private {
