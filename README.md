@@ -20,36 +20,62 @@ Real Ones can win with either of the following conditions:
 ## Actions
 
 ### Imposter
-- [x] startTask() - does nothing
-- [x] finishTask() - does nothing
-- [x] killPlayer()
-- [ ] sabotage() - stops and prevents task work
-- [ ] fix() - does nothing
-- [ ] checkImposters - can call anytime to see who the other Imposters are
+- startTask - does nothing
+- finishTask - does nothing
+- killPlayer
 
 ### Real Ones
-- [x] startTask()
-- [x] finishTask()
-- [ ] fix() - reset game when sabotaged
-- [ ] checkImposters() - only callable once game has ended
+- startTask
+- finishTask
 
 ### Shared
-- [x] callVote()
-- [x] vote()
-- [ ] checkDead()
+- callVote
+- vote
 
 ## Tasks
 
 Imposters can call this action to broadcast that they are doing an action while only pretending to do it.
 
 For Real Ones, completing a task requires two actions:
-1. Call doTask() once to start the task
-1. After the required time-to-complete has passed for the task started, call doTask() again to finish the task
+1. Call doTask once to start the task
+1. After the required time-to-complete has passed for the task started, call doTask again to finish the task
 
 When a Real One has started a task, they cannot perform any other tasks unless they finish, leave unfinished, or a vote is called.
 
-# Game Design Thoughts
+# Versions
+## v0.1
+- [x] Players will be able to play using a manually deployed contract. 
+  - [x] join
+  - [x] leave
+- [x] Playable game with simple win conditions: Imposters kill, Real Ones complete tasks or vote out Imposters
+  - [x] startTask
+  - [x] finishTask
+  - [x] killPlayer
+  - [x] callVote
+  - [x] vote
+- [ ] UI - specify contract address
+  - [ ] join / leave
+  - [ ] player list
+  - [ ] invoke game actions
+  - [ ] display game state
+  - [ ] display action results
+- No onchain privacy
 
+## Future
+- [ ] sabotage - stops and prevents task work
+- [ ] fix 
+  - does nothing for Imposters
+  - repairs sabotaged thing
+- [ ] checkImposters 
+  - if Imposter, can call anytime to see who the other Imposters are
+  - if Real One, only callable once game has ended
+- [ ] checkDead
+- [ ] Game factory contract
+- [ ] UI: Game creator
+- [ ] UI: List games
+- [ ] Fog-of-war mechanic
+
+## Game Design Thoughts
 ## Q: Does it matter if players can sabotage their team by calling actions against their own objectives?
 
 A: No, but could be a sybil attack vector. Someone could join as multiple players hoping to be on both teams. Attack incentive is stronger with rewards at stake.
@@ -94,5 +120,5 @@ Options:
     - This makes the game turn-based
 1. Different time-to-complete for different actions?
     - Would allow Imposters to time their actions with someone else's to create confusion, but requires Real Ones action time-to-complete to have some unpredictability so it cannot be easily calculated
-    - Maybe require complete task to have a `start()` and `finish()` action to fully complete and different tasks have different time-to-complete
+    - Maybe require complete task to have a `start` and `finish` action to fully complete and different tasks have different time-to-complete
 1. Time delayed execution? - how to execute this in contract?
