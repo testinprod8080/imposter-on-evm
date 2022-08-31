@@ -239,6 +239,20 @@ contract GameManagerTest is Test {
     assertEq(gameManager.tasksCompleted(), 1);
   }
 
+  function testDoTaskAsImposterDoesNotIncrementCompletedTasks() public {
+    // arrange
+    startGame(4);
+    changePrank(players[0]);
+
+    // act
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0), 1);
+    skip(10);
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0), 1);
+
+    // assert
+    assertEq(gameManager.tasksCompleted(), 0);
+  }
+
   function testCannotDoActionWhenNotJoined() public {
     // arrange
     stdstore
@@ -377,6 +391,16 @@ contract GameManagerTest is Test {
 
     // act & assert
     vm.expectRevert(bytes("Call vote cooldown still in effect"));
+    gameManager.callVote();
+  }
+
+  function testCannotCallVoteIfDoingTask() public {
+    // arrange
+    startGame(4);
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0), 1);
+
+    // act & assert
+    vm.expectRevert("You are currently doing a task");
     gameManager.callVote();
   }
 

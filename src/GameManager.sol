@@ -190,6 +190,10 @@ contract GameManager {
       block.timestamp - lastVoteCallTimestamp >= voteCallCooldown, 
       "Call vote cooldown still in effect"
     );
+    require(
+      realOnesTaskInProgress[msg.sender].id == 0,
+      "You are currently doing a task"
+    );
 
     changeGameState(GameStates.Voting);
     voteRound++;

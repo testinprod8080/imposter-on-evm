@@ -20,14 +20,16 @@ Real Ones can win with either of the following conditions:
 ## Actions
 
 ### Imposter
-- [ ] doTask() - does nothing
+- [x] startTask() - does nothing
+- [x] finishTask() - does nothing
 - [x] killPlayer()
 - [ ] sabotage() - stops and prevents task work
 - [ ] fix() - does nothing
 - [ ] checkImposters - can call anytime to see who the other Imposters are
 
 ### Real Ones
-- [ ] doTask()
+- [x] startTask()
+- [x] finishTask()
 - [ ] fix() - reset game when sabotaged
 - [ ] checkImposters() - only callable once game has ended
 
