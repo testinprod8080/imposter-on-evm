@@ -17,21 +17,28 @@ contract GameManagerTest is Test {
     CompleteTask,
     KillPlayer
   }
+  enum GameOutcomes {
+    Stalemate,
+    ImpostersWin,
+    RealOnesWin
+  }
   struct PlayerState {
     bool joined;
     bool alive;
   }
 
-  address constant PLAYER1 = address(1);
-  address constant PLAYER2 = address(2);
-  address constant PLAYER3 = address(3);
-  address constant PLAYER4 = address(4);
-  address constant PLAYER5 = address(5);
-  address constant PLAYER6 = address(6);
-  address constant PLAYER7 = address(7);
-  address constant PLAYER8 = address(8);
-  address constant PLAYER9 = address(9);
-  address constant PLAYER10 = address(10);
+  address[] private players = [
+    address(1),
+    address(2),
+    address(3),
+    address(4),
+    address(5),
+    address(6),
+    address(7),
+    address(8),
+    address(9),
+    address(10)
+  ];
 
   address[] imposters;
 
@@ -39,7 +46,7 @@ contract GameManagerTest is Test {
 
   function setUp() public {
     gameManager = new GameManager(10, 4, 0);
-    vm.startPrank(PLAYER1);
+    vm.startPrank(players[0]);
   }
 
   function testCannotHaveOneMinPlayer() public {
@@ -65,13 +72,13 @@ contract GameManagerTest is Test {
     // arrange
     gameManager = new GameManager(4, 4, 0);
     gameManager.join();
-    changePrank(PLAYER2);
+    changePrank(players[1]);
     gameManager.join();
-    changePrank(PLAYER3);
+    changePrank(players[2]);
     gameManager.join();
-    changePrank(PLAYER4);
+    changePrank(players[3]);
     gameManager.join();
-    changePrank(PLAYER5);
+    changePrank(players[4]);
 
     // act & assert
     vm.expectRevert(bytes("Game is full"));
@@ -96,7 +103,7 @@ contract GameManagerTest is Test {
 
     // assert
     assertEq(gameManager.getPlayerCount(), 1);
-    (bool joined,,) = gameManager.players(PLAYER1);
+    (bool joined,,) = gameManager.players(players[0]);
     assertTrue(joined);
   }
 
@@ -114,7 +121,7 @@ contract GameManagerTest is Test {
 
     // assert
     assertEq(gameManager.getPlayerCount(), 0);
-    (bool joined,,) = gameManager.players(PLAYER1);
+    (bool joined,,) = gameManager.players(players[0]);
     assertFalse(joined);
   }
 
@@ -148,11 +155,11 @@ contract GameManagerTest is Test {
   function testStart() public {
     // arrange
     gameManager.join();
-    changePrank(PLAYER2);
+    changePrank(players[1]);
     gameManager.join();
-    changePrank(PLAYER3);
+    changePrank(players[2]);
     gameManager.join();
-    changePrank(PLAYER4);
+    changePrank(players[3]);
     gameManager.join();
 
     // act
@@ -210,67 +217,59 @@ contract GameManagerTest is Test {
 
   function testCannotKillDeadPlayer() public {
     // arrange
-    gameManager.join();
-    changePrank(PLAYER2);
-    gameManager.join();
-    stdstore
-      .target(address(gameManager))
-      .sig("gameState()")
-      .checked_write(uint(GameStates.Started));
-    gameManager.doAction(uint(GameActions.KillPlayer), PLAYER1);
+    startGame(4);
+    changePrank(players[0]);
+    gameManager.doAction(uint(GameActions.KillPlayer), players[1]);
 
     // act & assert
     vm.expectRevert(bytes("Action rejected"));
-    gameManager.doAction(uint(GameActions.KillPlayer), PLAYER1);
+    gameManager.doAction(uint(GameActions.KillPlayer), players[1]);
   }
 
   function testCannotKillPlayerNotJoined() public {
     // arrange
-    gameManager.join();
-    changePrank(PLAYER2);
+    changePrank(players[4]);
     gameManager.join();
     gameManager.leave();
-    stdstore
-      .target(address(gameManager))
-      .sig("gameState()")
-      .checked_write(uint(GameStates.Started));
+    startGame(4);
 
     // act & assert
+    changePrank(players[0]);
     vm.expectRevert(bytes("Action rejected"));
-    changePrank(PLAYER1);
-    gameManager.doAction(uint(GameActions.KillPlayer), PLAYER2);
+    gameManager.doAction(uint(GameActions.KillPlayer), players[4]);
   }
 
   function testCannotKillWhileDead() public {
     // arrange
-    gameManager.join();
-    changePrank(PLAYER2);
-    gameManager.join();
-    stdstore
-      .target(address(gameManager))
-      .sig("gameState()")
-      .checked_write(uint(GameStates.Started));
-    gameManager.doAction(uint(GameActions.KillPlayer), PLAYER1);
+    startGame(10);
+    changePrank(players[1]);
+    gameManager.doAction(uint(GameActions.KillPlayer), players[0]);
 
     // act & assert
-    changePrank(PLAYER1);
+    changePrank(players[0]);
     vm.expectRevert(bytes("Action rejected"));
-    gameManager.doAction(uint(GameActions.KillPlayer), PLAYER2);
+    gameManager.doAction(uint(GameActions.KillPlayer), players[3]);
+  }
+
+  function testCannotKillIfNotImposter() public {
+    // arrange
+    startGame(4);
+
+    // act & assert
+    vm.expectRevert("Action rejected");
+    gameManager.doAction(uint(GameActions.KillPlayer), players[1]);
   }
 
   function testKill() public {
     // arrange
-    gameManager.join();
-    stdstore
-      .target(address(gameManager))
-      .sig("gameState()")
-      .checked_write(uint(GameStates.Started));
+    startGame(4);
 
     // act
-    gameManager.doAction(uint(GameActions.KillPlayer), PLAYER1);
+    changePrank(players[0]);
+    gameManager.doAction(uint(GameActions.KillPlayer), players[1]);
 
     // assert
-    (, bool alive,) = gameManager.players(PLAYER1);
+    (, bool alive,) = gameManager.players(players[1]);
     assertFalse((alive));
   }
 
@@ -301,17 +300,12 @@ contract GameManagerTest is Test {
 
   function testCannotCallVoteIfDead() public {
     // arrange
-    gameManager.join();
-    changePrank(PLAYER2);
-    gameManager.join();
-    stdstore
-      .target(address(gameManager))
-      .sig("gameState()")
-      .checked_write(uint(GameStates.Started));
-    gameManager.doAction(uint(GameActions.KillPlayer), PLAYER1);
+    startGame(4);
+    changePrank(players[0]);
+    gameManager.doAction(uint(GameActions.KillPlayer), players[1]);
 
     // act & assert
-    changePrank(PLAYER1);
+    changePrank(players[1]);
     vm.expectRevert(bytes("Player is not alive"));
     gameManager.callVote();
   }
@@ -334,23 +328,16 @@ contract GameManagerTest is Test {
     // arrange
     uint VOTECALL_COOLDOWN = 10;
     gameManager = new GameManager(4, 4, VOTECALL_COOLDOWN);
-    gameManager.join();
-    changePrank(PLAYER2);
-    gameManager.join();
-    changePrank(PLAYER3);
-    gameManager.join();
-    changePrank(PLAYER4);
-    gameManager.join();
-    gameManager.start();
+    startGame(4);
     skip(VOTECALL_COOLDOWN);
     gameManager.callVote();
-    gameManager.vote(PLAYER2);
-    changePrank(PLAYER3);
-    gameManager.vote(PLAYER2);
-    changePrank(PLAYER2);
-    gameManager.vote(PLAYER2);
-    changePrank(PLAYER1);
-    gameManager.vote(PLAYER2);
+    gameManager.vote(players[1]);
+    changePrank(players[2]);
+    gameManager.vote(players[1]);
+    changePrank(players[1]);
+    gameManager.vote(players[1]);
+    changePrank(players[0]);
+    gameManager.vote(players[1]);
 
     // act & assert
     vm.expectRevert(bytes("Call vote cooldown still in effect"));
@@ -375,35 +362,30 @@ contract GameManagerTest is Test {
   function testCannotVoteWhenNotInVoteCall() public {
     gameManager.join();
     vm.expectRevert(bytes("Current game state does not allow voting"));
-    gameManager.vote(PLAYER1);
+    gameManager.vote(players[0]);
   }
 
   function testCannotVoteIfNotPlayer() public {
     // arrange
     gameManager.join();
-    changePrank(PLAYER2);
+    changePrank(players[1]);
 
     // act & assert
     vm.expectRevert(bytes("Player did not join this game"));
-    gameManager.vote(PLAYER1);
+    gameManager.vote(players[0]);
   }
 
   function testCannotVoteIfDead() public {
     // arrange
-    gameManager.join();
-    stdstore
-      .target(address(gameManager))
-      .sig("gameState()")
-      .checked_write(uint(GameStates.Started));
-    gameManager.doAction(uint(GameActions.KillPlayer), PLAYER1);
-    stdstore
-      .target(address(gameManager))
-      .sig("gameState()")
-      .checked_write(uint(GameStates.Voting));
+    startGame(4);
+    changePrank(players[0]);
+    gameManager.doAction(uint(GameActions.KillPlayer), players[2]);
+    gameManager.callVote();
 
     // act & assert
     vm.expectRevert(bytes("Player is not alive"));
-    gameManager.vote(PLAYER1);
+    changePrank(players[2]);
+    gameManager.vote(players[0]);
   }
 
   function testCannotVoteForNonPlayer() public {
@@ -416,113 +398,93 @@ contract GameManagerTest is Test {
 
     // act & assert
     vm.expectRevert(bytes("Player did not join this game"));
-    gameManager.vote(PLAYER2);
+    gameManager.vote(players[1]);
   }
 
   function testCannotVoteForDeadPlayer() public {
     // arrange
-    gameManager.join();
-    changePrank(PLAYER2);
-    gameManager.join();
-    stdstore
-      .target(address(gameManager))
-      .sig("gameState()")
-      .checked_write(uint(GameStates.Started));
-    gameManager.doAction(uint(GameActions.KillPlayer), PLAYER1);
-    stdstore
-      .target(address(gameManager))
-      .sig("gameState()")
-      .checked_write(uint(GameStates.Voting));
+    startGame(4);
+    changePrank(players[0]);
+    gameManager.doAction(uint(GameActions.KillPlayer), players[1]);
+    gameManager.callVote();
     
     // act & assert
     vm.expectRevert(bytes("Player is not alive"));
-    gameManager.vote(PLAYER1);
+    gameManager.vote(players[1]);
   }
 
   function testCannotVoteMoreThanOnce() public {
     // arrange
     gameManager.join();
-    changePrank(PLAYER2);
+    changePrank(players[1]);
     gameManager.join();
     stdstore
       .target(address(gameManager))
       .sig("gameState()")
       .checked_write(uint(GameStates.Voting));
-    gameManager.vote(PLAYER1);
+    gameManager.vote(players[0]);
 
     // act & assert
     vm.expectRevert(bytes("You already voted"));
-    gameManager.vote(PLAYER1);
+    gameManager.vote(players[0]);
   }
 
   function testVote() public {
     // arrange
-    gameManager.join();
-    changePrank(PLAYER2);
-    gameManager.join();
-    stdstore
-      .target(address(gameManager))
-      .sig("gameState()")
-      .checked_write(uint(GameStates.Voting));
+    startGame(4);
+    gameManager.callVote();
 
     // act
-    gameManager.vote(PLAYER1);
+    gameManager.vote(players[1]);
+    changePrank(players[2]);
+    gameManager.vote(players[1]);
+    changePrank(players[1]);
+    gameManager.vote(players[1]);
+    changePrank(players[0]);
+    gameManager.vote(players[1]);
 
     // assert
-    assertEq(gameManager.votes(0, PLAYER1), 1);
+    assertEq(uint(gameManager.gameState()), uint(GameStates.Started));
+    assertEq(gameManager.votes(1, players[1]), 4);
   }
 
   function testVoteNoPlayerDiesWhenTied() public {
     // arrange
-    gameManager.join();
-    changePrank(PLAYER2);
-    gameManager.join();
-    changePrank(PLAYER3);
-    gameManager.join();
-    changePrank(PLAYER4);
-    gameManager.join();
-    gameManager.start();
+    startGame(4);
     gameManager.callVote();
 
     // act
-    gameManager.vote(PLAYER1);
-    changePrank(PLAYER3);
-    gameManager.vote(PLAYER1);
-    changePrank(PLAYER2);
-    gameManager.vote(PLAYER4);
-    changePrank(PLAYER1);
-    gameManager.vote(PLAYER4);
+    gameManager.vote(players[0]);
+    changePrank(players[2]);
+    gameManager.vote(players[0]);
+    changePrank(players[1]);
+    gameManager.vote(players[3]);
+    changePrank(players[0]);
+    gameManager.vote(players[3]);
 
     // assert
-    (, bool aliveP1,) = gameManager.players(PLAYER1);
+    (, bool aliveP1,) = gameManager.players(players[0]);
     assertTrue(aliveP1);
-    (, bool aliveP4,) = gameManager.players(PLAYER4);
+    (, bool aliveP4,) = gameManager.players(players[3]);
     assertTrue(aliveP4);
   }
 
   function testVotePlayerDiesAndSetsGameBackToStarted() public {
     // arrange
-    gameManager.join();
-    changePrank(PLAYER2);
-    gameManager.join();
-    changePrank(PLAYER3);
-    gameManager.join();
-    changePrank(PLAYER4);
-    gameManager.join();
-    gameManager.start();
+    startGame(4);
     gameManager.callVote();
 
     // act
-    gameManager.vote(PLAYER1);
-    changePrank(PLAYER3);
-    gameManager.vote(PLAYER4);
-    changePrank(PLAYER2);
-    gameManager.vote(PLAYER4);
-    changePrank(PLAYER1);
-    gameManager.vote(PLAYER4);
+    gameManager.vote(players[0]);
+    changePrank(players[2]);
+    gameManager.vote(players[3]);
+    changePrank(players[1]);
+    gameManager.vote(players[3]);
+    changePrank(players[0]);
+    gameManager.vote(players[3]);
 
     // assert - dead player
-    (, bool alive,) = gameManager.players(PLAYER4);
+    (, bool alive,) = gameManager.players(players[3]);
     assertFalse(alive);
 
     // assert - game state is started
@@ -534,49 +496,42 @@ contract GameManagerTest is Test {
 
   function testVoteMultiRoundMultipleDead() public {
     // arrange
-    gameManager.join();
-    changePrank(PLAYER2);
-    gameManager.join();
-    changePrank(PLAYER3);
-    gameManager.join();
-    changePrank(PLAYER4);
-    gameManager.join();
-    gameManager.start();
+    startGame(4);
     gameManager.callVote();
 
-    gameManager.vote(PLAYER1);
-    changePrank(PLAYER3);
-    gameManager.vote(PLAYER4);
-    changePrank(PLAYER2);
-    gameManager.vote(PLAYER4);
-    changePrank(PLAYER1);
-    gameManager.vote(PLAYER2);
+    gameManager.vote(players[0]);
+    changePrank(players[2]);
+    gameManager.vote(players[3]);
+    changePrank(players[1]);
+    gameManager.vote(players[3]);
+    changePrank(players[0]);
+    gameManager.vote(players[1]);
 
     // act - round 2
     gameManager.callVote();
-    gameManager.vote(PLAYER2);
-    changePrank(PLAYER2);
-    gameManager.vote(PLAYER1);
-    changePrank(PLAYER3);
-    gameManager.vote(PLAYER2);
+    gameManager.vote(players[1]);
+    changePrank(players[1]);
+    gameManager.vote(players[0]);
+    changePrank(players[2]);
+    gameManager.vote(players[1]);
 
     // assert - dead player
-    (, bool aliveP4,) = gameManager.players(PLAYER4);
+    (, bool aliveP4,) = gameManager.players(players[3]);
     assertFalse(aliveP4);
-    (, bool aliveP2,) = gameManager.players(PLAYER2);
+    (, bool aliveP2,) = gameManager.players(players[1]);
     assertFalse(aliveP2);
   }
 
   function testOneImposterAssigned() public {
     // arrange
     gameManager.join();
-    changePrank(PLAYER2);
+    changePrank(players[1]);
     gameManager.join();
-    changePrank(PLAYER3);
+    changePrank(players[2]);
     gameManager.join();
-    changePrank(PLAYER4);
+    changePrank(players[3]);
     gameManager.join();
-    changePrank(PLAYER5);
+    changePrank(players[4]);
     gameManager.join();
 
     // act
@@ -584,28 +539,29 @@ contract GameManagerTest is Test {
 
     // assert
     assertEq(gameManager.getImposterCount(), 1);
+    assertEq(gameManager.getRealOnesCount(), 4);
   }
 
   function testTwoImpostersAssigned() public {
     // arrange
     gameManager.join();
-    changePrank(PLAYER2);
+    changePrank(players[1]);
     gameManager.join();
-    changePrank(PLAYER3);
+    changePrank(players[2]);
     gameManager.join();
-    changePrank(PLAYER4);
+    changePrank(players[3]);
     gameManager.join();
-    changePrank(PLAYER5);
+    changePrank(players[4]);
     gameManager.join();
-    changePrank(PLAYER6);
+    changePrank(players[5]);
     gameManager.join();
-    changePrank(PLAYER7);
+    changePrank(players[6]);
     gameManager.join();
-    changePrank(PLAYER8);
+    changePrank(players[7]);
     gameManager.join();
-    changePrank(PLAYER9);
+    changePrank(players[8]);
     gameManager.join();
-    changePrank(PLAYER10);
+    changePrank(players[9]);
     gameManager.join();
 
     // act
@@ -613,5 +569,50 @@ contract GameManagerTest is Test {
 
     // assert
     assertEq(gameManager.getImposterCount(), 2);
+    assertEq(gameManager.getRealOnesCount(), 8);
+  }
+
+  function testImpostersWinByKills() public {
+    // arrange
+    startGame(4);
+
+    // act
+    changePrank(players[0]);
+    gameManager.doAction(uint(GameActions.KillPlayer), players[1]);
+    gameManager.doAction(uint(GameActions.KillPlayer), players[2]);
+    gameManager.doAction(uint(GameActions.KillPlayer), players[3]);
+
+    // assert
+    assertEq(uint(gameManager.gameState()), uint(GameStates.Ended));
+    assertEq(uint(gameManager.gameOutcome()), uint(GameOutcomes.ImpostersWin));
+  }
+
+  function testRealOnesWinByVote() public {
+    // arrange
+    startGame(4);
+
+    // act
+    gameManager.callVote();
+    changePrank(players[0]);
+    gameManager.vote(players[0]);
+    changePrank(players[1]);
+    gameManager.vote(players[0]);
+    changePrank(players[2]);
+    gameManager.vote(players[0]);
+    changePrank(players[3]);
+    gameManager.vote(players[0]);
+
+    // assert
+    assertEq(uint(gameManager.gameState()), uint(GameStates.Ended));
+    assertEq(uint(gameManager.gameOutcome()), uint(GameOutcomes.RealOnesWin));
+  }
+
+  // Helper functions
+  function startGame(uint numPlayers) private {
+    for (uint i = 0; i < numPlayers; i++) {
+      changePrank(players[i]);
+      gameManager.join();
+    }
+    gameManager.start();
   }
 }
