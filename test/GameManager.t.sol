@@ -200,7 +200,7 @@ contract GameManagerTest is Test {
     gameManager.doAction(uint(GameActions.CompleteTask), address(0));
 
     // assert
-    assertEq(gameManager.points(), 1);
+    assertEq(gameManager.tasksCompleted(), 1);
   }
 
   function testCannotDoActionWhenNotJoined() public {
@@ -571,7 +571,8 @@ contract GameManagerTest is Test {
     assertEq(gameManager.getImposterCount(), 2);
     assertEq(gameManager.getRealOnesCount(), 8);
   }
-
+  
+  //  Real One per Imposter left
   function testImpostersWinByKills() public {
     // arrange
     startGame(4);
@@ -580,7 +581,6 @@ contract GameManagerTest is Test {
     changePrank(players[0]);
     gameManager.doAction(uint(GameActions.KillPlayer), players[1]);
     gameManager.doAction(uint(GameActions.KillPlayer), players[2]);
-    gameManager.doAction(uint(GameActions.KillPlayer), players[3]);
 
     // assert
     assertEq(uint(gameManager.gameState()), uint(GameStates.Ended));
@@ -614,5 +614,21 @@ contract GameManagerTest is Test {
       gameManager.join();
     }
     gameManager.start();
+  }
+
+  function testRealOnesWinByTasks() public {
+    // arrange
+    startGame(4);
+
+    // act
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0));
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0));
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0));
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0));
+    gameManager.doAction(uint(GameActions.CompleteTask), address(0));
+
+    // assert
+    assertEq(uint(gameManager.gameState()), uint(GameStates.Ended));
+    assertEq(uint(gameManager.gameOutcome()), uint(GameOutcomes.RealOnesWin));
   }
 }

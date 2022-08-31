@@ -39,13 +39,13 @@ contract GameManager {
   uint immutable maxPlayers;
   uint immutable minPlayers;
   uint immutable voteCallCooldown;
-
+  uint immutable tasksCompletedToWin = 5;
 
   uint public lastVoteCallTimestamp;
   uint public numAlivePlayers = 0;
   uint public numVotes = 0;
   uint public voteRound = 0;
-  uint public points = 0;
+  uint public tasksCompleted = 0;
   mapping(address => PlayerState) public players;
   mapping(uint => mapping(address => uint)) public votes;
   mapping(uint => mapping(address => bool)) public voted;
@@ -238,7 +238,7 @@ contract GameManager {
       numAlivePlayers--;
     }
     resetVotes();
-    bool winConditionMet = checkWinConditions();
+    bool winConditionMet = resolveWinConditionsByAlivePlayers();
 
     if (winConditionMet == false) {
       changeGameState(GameStates.Started);
@@ -273,7 +273,9 @@ contract GameManager {
   }
 
   function completeTaskAction() private {
-    points++;
+    tasksCompleted++;
+
+    resolveWinConditionsByTasks();
   }
 
   function killPlayerAction(address target) private {
@@ -285,19 +287,10 @@ contract GameManager {
 
     if (numAlivePlayers > 0) numAlivePlayers--;
 
-    checkWinConditions();
+    resolveWinConditionsByAlivePlayers();
   }
 
-  function isImposter(address playerToCheck) private view returns (bool isImposter_) {
-    for (uint i = 0; i < imposters.length; i++) {
-      if (imposters[i] == playerToCheck)
-        return true;
-    }
-
-    return false;
-  }
-
-  function checkWinConditions() private returns (bool winConditionMet) {
+  function resolveWinConditionsByAlivePlayers() private returns (bool winConditionMet) {
     uint aliveImposters = 0;
     for (uint i = 0; i < imposters.length; i++) {
       if (players[imposters[i]].alive)
@@ -316,10 +309,29 @@ contract GameManager {
         aliveRealOnes++;
     }
 
-    if (aliveRealOnes <= 0) {
+    if (aliveRealOnes <= aliveImposters) {
       changeGameState(GameStates.Ended);
       gameOutcome = GameOutcomes.ImpostersWin;
       return true;
+    }
+
+    return false;
+  }
+
+  function resolveWinConditionsByTasks() private returns (bool winConditionMet) {
+    if (tasksCompleted >= tasksCompletedToWin) {
+      changeGameState(GameStates.Ended);
+      gameOutcome = GameOutcomes.RealOnesWin;
+      return true;
+    }
+
+    return false;
+  }
+
+  function isImposter(address playerToCheck) private view returns (bool isImposter_) {
+    for (uint i = 0; i < imposters.length; i++) {
+      if (imposters[i] == playerToCheck)
+        return true;
     }
 
     return false;
