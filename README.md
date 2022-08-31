@@ -53,6 +53,7 @@ When a Real One has started a task, they cannot perform any other tasks unless t
   - [x] killPlayer
   - [x] callVote
   - [x] vote
+  - [ ] Random imposter assignment
 - [ ] UI - specify contract address
   - [ ] join / leave
   - [ ] player list
