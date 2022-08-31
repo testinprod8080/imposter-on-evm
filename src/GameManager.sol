@@ -19,6 +19,12 @@ contract GameManager {
     KillPlayer
   }
 
+  enum GameOutcomes {
+    Stalemate,
+    ImpostersWin,
+    RealOnesWin
+  }
+
   struct PlayerState {
     bool joined;
     bool alive;
@@ -34,6 +40,7 @@ contract GameManager {
   uint immutable minPlayers;
   uint immutable voteCallCooldown;
 
+
   uint public lastVoteCallTimestamp;
   uint public numAlivePlayers = 0;
   uint public numVotes = 0;
@@ -43,8 +50,10 @@ contract GameManager {
   mapping(uint => mapping(address => uint)) public votes;
   mapping(uint => mapping(address => bool)) public voted;
   GameStates public gameState = GameStates.NotStarted;
+  GameOutcomes public gameOutcome = GameOutcomes.Stalemate;
 
   address[] private playerAddresses;
+  address[] private realOnes;
   address[] private imposters;
   TopVotedPlayer[] private topVotedPlayers;
 
@@ -87,7 +96,10 @@ contract GameManager {
 
   function join() 
     external 
-    correctGameState(GameStates.NotStarted, "Current game state does not allow joining")
+    correctGameState(
+      GameStates.NotStarted, 
+      "Current game state does not allow joining"
+    )
   {
     require(players[msg.sender].joined == false, "You have already joined");
     require(playerAddresses.length < maxPlayers, "Game is full");
@@ -134,18 +146,15 @@ contract GameManager {
   function doAction(uint action, address target) 
     external 
     onlyPlayer(msg.sender)
-    correctGameState(GameStates.Started, "Current game state does not allow actions")
+    correctGameState(
+      GameStates.Started, 
+      "Current game state does not allow actions"
+    )
   {
-    if (GameActions(action) == GameActions.CompleteTask) {
-      points++;
-    } else if (GameActions(action) == GameActions.KillPlayer) {
-      require(players[msg.sender].alive == true, "Action rejected");
-      require(players[target].alive == true, "Action rejected");
-      
-      players[target].alive = false;
-
-      if (numAlivePlayers > 0) numAlivePlayers--;
-    }
+    if (GameActions(action) == GameActions.CompleteTask) 
+      completeTaskAction();
+    else if (GameActions(action) == GameActions.KillPlayer) 
+      killPlayerAction(target);
   }
 
   function callVote() 
@@ -173,14 +182,14 @@ contract GameManager {
   {
     require(voted[voteRound][msg.sender] == false, "You already voted");
 
-    voted[voteRound][msg.sender] = true;
-
     votes[voteRound][target]++;
     numVotes++;
     setTopVotedPlayer(target, votes[voteRound][target]);
 
     if (numVotes == numAlivePlayers)
       killTopVotedPlayer();
+
+    voted[voteRound][msg.sender] = true;
   }
 
   function getPlayerCount() public view returns(uint count) {
@@ -189,6 +198,10 @@ contract GameManager {
 
   function getImposterCount() public view returns(uint count) {
     return imposters.length;
+  }
+
+  function getRealOnesCount() public view returns(uint count) {
+    return realOnes.length;
   }
 
   function changeGameState(GameStates newGameState) private {
@@ -225,8 +238,12 @@ contract GameManager {
       numAlivePlayers--;
     }
     resetVotes();
-    changeGameState(GameStates.Started);
-    lastVoteCallTimestamp = block.timestamp;
+    bool winConditionMet = checkWinConditions();
+
+    if (winConditionMet == false) {
+      changeGameState(GameStates.Started);
+      lastVoteCallTimestamp = block.timestamp;
+    }
   }
 
   function resetVotes() private {
@@ -246,13 +263,65 @@ contract GameManager {
   function setTeams() private {
     uint numImposters = playerAddresses.length / 4;
 
-    for (uint i = 0; i < numImposters; i++) {
+    for (uint i = 0; i < playerAddresses.length; i++) {
       // TODO needs to be random
-      imposters.push(playerAddresses[i]);
+      if (imposters.length < numImposters)
+        imposters.push(playerAddresses[i]);
+      else
+        realOnes.push(playerAddresses[i]);
     }
   }
 
-  // function checkWinConditions() private {
+  function completeTaskAction() private {
+    points++;
+  }
 
-  // }
+  function killPlayerAction(address target) private {
+    require(players[msg.sender].alive == true, "Action rejected");
+    require(players[target].alive == true, "Action rejected");
+    require(isImposter(msg.sender), "Action rejected");
+    
+    players[target].alive = false;
+
+    if (numAlivePlayers > 0) numAlivePlayers--;
+
+    checkWinConditions();
+  }
+
+  function isImposter(address playerToCheck) private view returns (bool isImposter_) {
+    for (uint i = 0; i < imposters.length; i++) {
+      if (imposters[i] == playerToCheck)
+        return true;
+    }
+
+    return false;
+  }
+
+  function checkWinConditions() private returns (bool winConditionMet) {
+    uint aliveImposters = 0;
+    for (uint i = 0; i < imposters.length; i++) {
+      if (players[imposters[i]].alive)
+        aliveImposters++;
+    }
+
+    if (aliveImposters <= 0) {
+      changeGameState(GameStates.Ended);
+      gameOutcome = GameOutcomes.RealOnesWin;
+      return true;
+    }
+
+    uint aliveRealOnes = 0;
+    for (uint i = 0; i < realOnes.length; i++) {
+      if (players[realOnes[i]].alive)
+        aliveRealOnes++;
+    }
+
+    if (aliveRealOnes <= 0) {
+      changeGameState(GameStates.Ended);
+      gameOutcome = GameOutcomes.ImpostersWin;
+      return true;
+    }
+
+    return false;
+  }
 }
