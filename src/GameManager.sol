@@ -1,47 +1,15 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.16;
 
+import "./Structs.sol";
+import "./Enums.sol";
+import "./Errors.sol";
+
 /// @title A title that should describe the contract/interface
 /// @author The name of the author
 /// @notice Explain to an end user what this does
 /// @dev Explain to a developer any extra details
 contract GameManager {
-  // @dev do not reorder enums to avoid breaking changes. Add new at the end
-  enum GameStates { 
-    NotStarted, 
-    Started, 
-    Ended,
-    Voting
-  }
-
-  enum GameActions {
-    CompleteTask,
-    KillPlayer
-  }
-
-  enum GameOutcomes {
-    Stalemate,
-    ImpostersWin,
-    RealOnesWin
-  }
-
-  struct PlayerState {
-    bool joined;
-    bool alive;
-    int playerAddrIndex;
-  }
-
-  struct TopVotedPlayer {
-    address addr;
-    uint votes;
-  }
-
-  struct TaskInProgress {
-    uint id;
-    uint startTime;
-  }
-
-  string constant ACTION_REJECTED_ERROR_MSG = "Action rejected";
 
   uint immutable maxPlayers;
   uint immutable minPlayers;
@@ -53,19 +21,19 @@ contract GameManager {
   uint public numVotes = 0;
   uint public voteRound = 0;
   uint public tasksCompleted = 0;
-  mapping(address => PlayerState) public players;
+  mapping(address => Structs.PlayerState) public players;
   mapping(uint => mapping(address => uint)) public votes;
   mapping(uint => mapping(address => bool)) public voted;
-  GameStates public gameState = GameStates.NotStarted;
-  GameOutcomes public gameOutcome = GameOutcomes.Stalemate;
+  Enums.GameStates public gameState = Enums.GameStates.NotStarted;
+  Enums.GameOutcomes public gameOutcome = Enums.GameOutcomes.Stalemate;
   mapping(uint => uint) public tasks;
 
   address[] private playerAddresses;
   address[] private imposters; // TODO hide
   address[] private realOnes; // TODO hide
-  mapping(address => TaskInProgress) private realOnesTaskInProgress; // TODO hide
+  mapping(address => Structs.TaskInProgress) private realOnesTaskInProgress; // TODO hide
   mapping(address => uint[]) private realOnesCompletedTasks; // TODO hide
-  TopVotedPlayer[] private topVotedPlayers;
+  Structs.TopVotedPlayer[] private topVotedPlayers;
 
   modifier onlyPlayer(address player) {
     require(
@@ -83,7 +51,7 @@ contract GameManager {
     _;
   }
 
-  modifier correctGameState(GameStates expectedGameState, string memory errorMsg) {
+  modifier correctGameState(Enums.GameStates expectedGameState, string memory errorMsg) {
     require(
       gameState == expectedGameState,
       errorMsg
@@ -113,14 +81,14 @@ contract GameManager {
   function join() 
     external 
     correctGameState(
-      GameStates.NotStarted, 
+      Enums.GameStates.NotStarted, 
       "Current game state does not allow joining"
     )
   {
     require(players[msg.sender].joined == false, "You have already joined");
     require(playerAddresses.length < maxPlayers, "Game is full");
 
-    players[msg.sender] = PlayerState({ 
+    players[msg.sender] = Structs.PlayerState({ 
       joined: true, 
       alive: true,
       playerAddrIndex: int(playerAddresses.length)
@@ -132,7 +100,7 @@ contract GameManager {
   function leave() external onlyPlayer(msg.sender) {
     removeFromPlayerAddress(uint(players[msg.sender].playerAddrIndex));
 
-    players[msg.sender] = PlayerState({ 
+    players[msg.sender] = Structs.PlayerState({ 
       joined: false, 
       alive: false,
       playerAddrIndex: -1
@@ -144,7 +112,7 @@ contract GameManager {
     onlyPlayer(msg.sender)
   {
     require(
-      gameState == GameStates.NotStarted || gameState == GameStates.Voting,
+      gameState == Enums.GameStates.NotStarted || gameState == Enums.GameStates.Voting,
       "Current game state does not allow starting game"
     );
     require(playerAddresses.length >= minPlayers, "Not enough players to start game");
@@ -154,7 +122,7 @@ contract GameManager {
     setTeams();
 
     lastVoteCallTimestamp = block.timestamp;
-    changeGameState(GameStates.Started);
+    changeGameState(Enums.GameStates.Started);
   }
 
   // TODO input paramaters should be private
@@ -163,12 +131,12 @@ contract GameManager {
     external 
     onlyPlayer(msg.sender)
     correctGameState(
-      GameStates.Started, 
+      Enums.GameStates.Started, 
       "Current game state does not allow actions"
     )
   {
     if (
-      GameActions(action) == GameActions.CompleteTask
+      Enums.GameActions(action) == Enums.GameActions.CompleteTask
       && isImposter(msg.sender) == false
     ) {
       if (realOnesTaskInProgress[msg.sender].id == 0)
@@ -180,7 +148,7 @@ contract GameManager {
           finishTask(taskId);
       }
     }
-    else if (GameActions(action) == GameActions.KillPlayer) 
+    else if (Enums.GameActions(action) == Enums.GameActions.KillPlayer) 
       killPlayer(target);
   }
 
@@ -188,7 +156,7 @@ contract GameManager {
     external 
     onlyPlayer(msg.sender)
     onlyAlive(msg.sender) 
-    correctGameState(GameStates.Started, "Game must be started to call a vote")
+    correctGameState(Enums.GameStates.Started, "Game must be started to call a vote")
   {
     require(
       block.timestamp - lastVoteCallTimestamp >= voteCallCooldown, 
@@ -199,8 +167,10 @@ contract GameManager {
       "You are currently doing a task"
     );
 
-    changeGameState(GameStates.Voting);
+    changeGameState(Enums.GameStates.Voting);
     voteRound++;
+
+    cancelAllTasksInProgress();
   }
 
   function vote(address target) 
@@ -209,7 +179,7 @@ contract GameManager {
     onlyAlive(msg.sender) 
     onlyPlayer(target)
     onlyAlive(target)
-    correctGameState(GameStates.Voting, "Current game state does not allow voting")
+    correctGameState(Enums.GameStates.Voting, "Current game state does not allow voting")
   {
     require(voted[voteRound][msg.sender] == false, "You already voted");
 
@@ -235,11 +205,15 @@ contract GameManager {
     return realOnes.length;
   }
 
-  function changeGameState(GameStates newGameState) private {
-    require(gameState != GameStates.Ended, "Game has already ended");
-    if (newGameState == GameStates.NotStarted) {
+  function changeGameState(Enums.GameStates newGameState) private {
+    require(
+      gameState != Enums.GameStates.Ended, 
+      "Game has already ended"
+    );
+
+    if (newGameState == Enums.GameStates.NotStarted) {
       require(
-        gameState != GameStates.Started, 
+        gameState != Enums.GameStates.Started, 
         "Game has already started"
       );
     }
@@ -254,12 +228,12 @@ contract GameManager {
       if (voteCnt > topVotes) {
         delete topVotedPlayers;
 
-        topVotedPlayers.push(TopVotedPlayer({ addr: playerToCheck, votes: voteCnt }));
+        topVotedPlayers.push(Structs.TopVotedPlayer({ addr: playerToCheck, votes: voteCnt }));
       } else if (voteCnt == topVotes) {
-        topVotedPlayers.push(TopVotedPlayer({ addr: playerToCheck, votes: voteCnt }));
+        topVotedPlayers.push(Structs.TopVotedPlayer({ addr: playerToCheck, votes: voteCnt }));
       }
     } else {
-      topVotedPlayers.push(TopVotedPlayer({ addr: playerToCheck, votes: voteCnt }));
+      topVotedPlayers.push(Structs.TopVotedPlayer({ addr: playerToCheck, votes: voteCnt }));
     }
   }
 
@@ -272,7 +246,7 @@ contract GameManager {
     bool winConditionMet = resolveWinConditionsByAlivePlayers();
 
     if (winConditionMet == false) {
-      changeGameState(GameStates.Started);
+      changeGameState(Enums.GameStates.Started);
       lastVoteCallTimestamp = block.timestamp;
     }
   }
@@ -304,10 +278,16 @@ contract GameManager {
   }
 
   function startTask(uint taskId) private {
-    require(realOnesTaskInProgress[msg.sender].id == 0, ACTION_REJECTED_ERROR_MSG);
-    require(isCompletedTask(taskId) == false, ACTION_REJECTED_ERROR_MSG);
+    require(
+      realOnesTaskInProgress[msg.sender].id == 0, 
+      ErrorMsgs.ACTION_REJECTED
+    );
+    require(
+      isCompletedTask(taskId) == false, 
+      ErrorMsgs.ACTION_REJECTED
+    );
 
-    realOnesTaskInProgress[msg.sender] = TaskInProgress({ 
+    realOnesTaskInProgress[msg.sender] = Structs.TaskInProgress({ 
       id: taskId, 
       startTime: block.timestamp
     });
@@ -316,11 +296,11 @@ contract GameManager {
   function finishTask(uint taskId) private {
     require(
       realOnesTaskInProgress[msg.sender].id == taskId, 
-      ACTION_REJECTED_ERROR_MSG
+      ErrorMsgs.ACTION_REJECTED
     );
     require(
       block.timestamp - realOnesTaskInProgress[msg.sender].startTime >= tasks[taskId], 
-      ACTION_REJECTED_ERROR_MSG
+      ErrorMsgs.ACTION_REJECTED
     );
 
     tasksCompleted++;
@@ -335,15 +315,21 @@ contract GameManager {
   }
 
   function killPlayer(address target) private {
-    require(players[msg.sender].alive == true, ACTION_REJECTED_ERROR_MSG);
-    require(players[target].alive == true, ACTION_REJECTED_ERROR_MSG);
-    require(isImposter(msg.sender), ACTION_REJECTED_ERROR_MSG);
+    require(players[msg.sender].alive == true, ErrorMsgs.ACTION_REJECTED);
+    require(players[target].alive == true, ErrorMsgs.ACTION_REJECTED);
+    require(isImposter(msg.sender), ErrorMsgs.ACTION_REJECTED);
     
     players[target].alive = false;
 
     if (numAlivePlayers > 0) numAlivePlayers--;
 
     resolveWinConditionsByAlivePlayers();
+  }
+
+  function cancelAllTasksInProgress() private {
+    for (uint i = 0; i < realOnes.length; i++) {
+      realOnesTaskInProgress[realOnes[i]].id = 0;
+    }
   }
 
   function resolveWinConditionsByAlivePlayers() private returns (bool winConditionMet) {
@@ -354,8 +340,8 @@ contract GameManager {
     }
 
     if (aliveImposters <= 0) {
-      changeGameState(GameStates.Ended);
-      gameOutcome = GameOutcomes.RealOnesWin;
+      changeGameState(Enums.GameStates.Ended);
+      gameOutcome = Enums.GameOutcomes.RealOnesWin;
       return true;
     }
 
@@ -366,8 +352,8 @@ contract GameManager {
     }
 
     if (aliveRealOnes <= aliveImposters) {
-      changeGameState(GameStates.Ended);
-      gameOutcome = GameOutcomes.ImpostersWin;
+      changeGameState(Enums.GameStates.Ended);
+      gameOutcome = Enums.GameOutcomes.ImpostersWin;
       return true;
     }
 
@@ -376,8 +362,8 @@ contract GameManager {
 
   function resolveWinConditionsByTasks() private returns (bool winConditionMet) {
     if (tasksCompleted >= numTasks * realOnes.length) {
-      changeGameState(GameStates.Ended);
-      gameOutcome = GameOutcomes.RealOnesWin;
+      changeGameState(Enums.GameStates.Ended);
+      gameOutcome = Enums.GameOutcomes.RealOnesWin;
       return true;
     }
 
