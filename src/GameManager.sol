@@ -1,61 +1,39 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.16;
 
+import "./Structs.sol";
+import "./Enums.sol";
+import "./Errors.sol";
+
 /// @title A title that should describe the contract/interface
 /// @author The name of the author
 /// @notice Explain to an end user what this does
 /// @dev Explain to a developer any extra details
 contract GameManager {
-  // @dev do not reorder enums to avoid breaking changes. Add new at the end
-  enum GameStates { 
-    NotStarted, 
-    Started, 
-    Ended,
-    Voting
-  }
-
-  enum GameActions {
-    CompleteTask,
-    KillPlayer
-  }
-
-  enum GameOutcomes {
-    Stalemate,
-    ImpostersWin,
-    RealOnesWin
-  }
-
-  struct PlayerState {
-    bool joined;
-    bool alive;
-    int playerAddrIndex;
-  }
-
-  struct TopVotedPlayer {
-    address addr;
-    uint votes;
-  }
 
   uint immutable maxPlayers;
   uint immutable minPlayers;
   uint immutable voteCallCooldown;
-
+  uint immutable numTasks = 5;
 
   uint public lastVoteCallTimestamp;
   uint public numAlivePlayers = 0;
   uint public numVotes = 0;
   uint public voteRound = 0;
-  uint public points = 0;
-  mapping(address => PlayerState) public players;
+  uint public tasksCompleted = 0;
+  mapping(address => Structs.PlayerState) public players;
   mapping(uint => mapping(address => uint)) public votes;
   mapping(uint => mapping(address => bool)) public voted;
-  GameStates public gameState = GameStates.NotStarted;
-  GameOutcomes public gameOutcome = GameOutcomes.Stalemate;
+  Enums.GameStates public gameState = Enums.GameStates.NotStarted;
+  Enums.GameOutcomes public gameOutcome = Enums.GameOutcomes.Stalemate;
+  mapping(uint => uint) public tasks;
 
   address[] private playerAddresses;
-  address[] private realOnes;
-  address[] private imposters;
-  TopVotedPlayer[] private topVotedPlayers;
+  address[] private imposters; // TODO hide
+  address[] private realOnes; // TODO hide
+  mapping(address => Structs.TaskInProgress) private realOnesTaskInProgress; // TODO hide
+  mapping(address => uint[]) private realOnesCompletedTasks; // TODO hide
+  Structs.TopVotedPlayer[] private topVotedPlayers;
 
   modifier onlyPlayer(address player) {
     require(
@@ -73,7 +51,7 @@ contract GameManager {
     _;
   }
 
-  modifier correctGameState(GameStates expectedGameState, string memory errorMsg) {
+  modifier correctGameState(Enums.GameStates expectedGameState, string memory errorMsg) {
     require(
       gameState == expectedGameState,
       errorMsg
@@ -92,19 +70,25 @@ contract GameManager {
     maxPlayers = maxPlayers_;
     minPlayers = minPlayers_;
     voteCallCooldown = voteCallCooldown_;
+
+    tasks[1] = 10;
+    tasks[2] = 20;
+    tasks[3] = 30;
+    tasks[4] = 40;
+    tasks[5] = 50;
   }
 
   function join() 
     external 
     correctGameState(
-      GameStates.NotStarted, 
+      Enums.GameStates.NotStarted, 
       "Current game state does not allow joining"
     )
   {
     require(players[msg.sender].joined == false, "You have already joined");
     require(playerAddresses.length < maxPlayers, "Game is full");
 
-    players[msg.sender] = PlayerState({ 
+    players[msg.sender] = Structs.PlayerState({ 
       joined: true, 
       alive: true,
       playerAddrIndex: int(playerAddresses.length)
@@ -116,7 +100,7 @@ contract GameManager {
   function leave() external onlyPlayer(msg.sender) {
     removeFromPlayerAddress(uint(players[msg.sender].playerAddrIndex));
 
-    players[msg.sender] = PlayerState({ 
+    players[msg.sender] = Structs.PlayerState({ 
       joined: false, 
       alive: false,
       playerAddrIndex: -1
@@ -128,7 +112,7 @@ contract GameManager {
     onlyPlayer(msg.sender)
   {
     require(
-      gameState == GameStates.NotStarted || gameState == GameStates.Voting,
+      gameState == Enums.GameStates.NotStarted || gameState == Enums.GameStates.Voting,
       "Current game state does not allow starting game"
     );
     require(playerAddresses.length >= minPlayers, "Not enough players to start game");
@@ -138,38 +122,55 @@ contract GameManager {
     setTeams();
 
     lastVoteCallTimestamp = block.timestamp;
-    changeGameState(GameStates.Started);
+    changeGameState(Enums.GameStates.Started);
   }
 
   // TODO input paramaters should be private
   // TODO should not be able to connect a resulting state to the call txn
-  function doAction(uint action, address target) 
+  function doAction(uint action, address target, uint taskId) 
     external 
     onlyPlayer(msg.sender)
     correctGameState(
-      GameStates.Started, 
+      Enums.GameStates.Started, 
       "Current game state does not allow actions"
     )
   {
-    if (GameActions(action) == GameActions.CompleteTask) 
-      completeTaskAction();
-    else if (GameActions(action) == GameActions.KillPlayer) 
-      killPlayerAction(target);
+    if (
+      Enums.GameActions(action) == Enums.GameActions.CompleteTask
+      && isImposter(msg.sender) == false
+    ) {
+      if (realOnesTaskInProgress[msg.sender].id == 0)
+        startTask(taskId);
+      else {
+        if (taskId == 0)
+          leaveTask();
+        else
+          finishTask(taskId);
+      }
+    }
+    else if (Enums.GameActions(action) == Enums.GameActions.KillPlayer) 
+      killPlayer(target);
   }
 
   function callVote() 
     external 
     onlyPlayer(msg.sender)
     onlyAlive(msg.sender) 
-    correctGameState(GameStates.Started, "Game must be started to call a vote")
+    correctGameState(Enums.GameStates.Started, "Game must be started to call a vote")
   {
     require(
       block.timestamp - lastVoteCallTimestamp >= voteCallCooldown, 
       "Call vote cooldown still in effect"
     );
+    require(
+      realOnesTaskInProgress[msg.sender].id == 0,
+      "You are currently doing a task"
+    );
 
-    changeGameState(GameStates.Voting);
+    changeGameState(Enums.GameStates.Voting);
     voteRound++;
+
+    cancelAllTasksInProgress();
   }
 
   function vote(address target) 
@@ -178,7 +179,7 @@ contract GameManager {
     onlyAlive(msg.sender) 
     onlyPlayer(target)
     onlyAlive(target)
-    correctGameState(GameStates.Voting, "Current game state does not allow voting")
+    correctGameState(Enums.GameStates.Voting, "Current game state does not allow voting")
   {
     require(voted[voteRound][msg.sender] == false, "You already voted");
 
@@ -204,11 +205,15 @@ contract GameManager {
     return realOnes.length;
   }
 
-  function changeGameState(GameStates newGameState) private {
-    require(gameState != GameStates.Ended, "Game has already ended");
-    if (newGameState == GameStates.NotStarted) {
+  function changeGameState(Enums.GameStates newGameState) private {
+    require(
+      gameState != Enums.GameStates.Ended, 
+      "Game has already ended"
+    );
+
+    if (newGameState == Enums.GameStates.NotStarted) {
       require(
-        gameState != GameStates.Started, 
+        gameState != Enums.GameStates.Started, 
         "Game has already started"
       );
     }
@@ -223,12 +228,12 @@ contract GameManager {
       if (voteCnt > topVotes) {
         delete topVotedPlayers;
 
-        topVotedPlayers.push(TopVotedPlayer({ addr: playerToCheck, votes: voteCnt }));
+        topVotedPlayers.push(Structs.TopVotedPlayer({ addr: playerToCheck, votes: voteCnt }));
       } else if (voteCnt == topVotes) {
-        topVotedPlayers.push(TopVotedPlayer({ addr: playerToCheck, votes: voteCnt }));
+        topVotedPlayers.push(Structs.TopVotedPlayer({ addr: playerToCheck, votes: voteCnt }));
       }
     } else {
-      topVotedPlayers.push(TopVotedPlayer({ addr: playerToCheck, votes: voteCnt }));
+      topVotedPlayers.push(Structs.TopVotedPlayer({ addr: playerToCheck, votes: voteCnt }));
     }
   }
 
@@ -238,10 +243,10 @@ contract GameManager {
       numAlivePlayers--;
     }
     resetVotes();
-    bool winConditionMet = checkWinConditions();
+    bool winConditionMet = resolveWinConditionsByAlivePlayers();
 
     if (winConditionMet == false) {
-      changeGameState(GameStates.Started);
+      changeGameState(Enums.GameStates.Started);
       lastVoteCallTimestamp = block.timestamp;
     }
   }
@@ -272,32 +277,62 @@ contract GameManager {
     }
   }
 
-  function completeTaskAction() private {
-    points++;
+  function startTask(uint taskId) private {
+    require(
+      realOnesTaskInProgress[msg.sender].id == 0, 
+      ErrorMsgs.ACTION_REJECTED
+    );
+    require(
+      isCompletedTask(taskId) == false, 
+      ErrorMsgs.ACTION_REJECTED
+    );
+
+    realOnesTaskInProgress[msg.sender] = Structs.TaskInProgress({ 
+      id: taskId, 
+      startTime: block.timestamp
+    });
   }
 
-  function killPlayerAction(address target) private {
-    require(players[msg.sender].alive == true, "Action rejected");
-    require(players[target].alive == true, "Action rejected");
-    require(isImposter(msg.sender), "Action rejected");
+  function finishTask(uint taskId) private {
+    require(
+      realOnesTaskInProgress[msg.sender].id == taskId, 
+      ErrorMsgs.ACTION_REJECTED
+    );
+    require(
+      block.timestamp - realOnesTaskInProgress[msg.sender].startTime >= tasks[taskId], 
+      ErrorMsgs.ACTION_REJECTED
+    );
+
+    tasksCompleted++;
+    realOnesCompletedTasks[msg.sender].push(taskId);
+    realOnesTaskInProgress[msg.sender].id = 0;
+
+    resolveWinConditionsByTasks();
+  }
+
+  function leaveTask() private {
+    realOnesTaskInProgress[msg.sender].id = 0;
+  }
+
+  function killPlayer(address target) private {
+    require(players[msg.sender].alive == true, ErrorMsgs.ACTION_REJECTED);
+    require(players[target].alive == true, ErrorMsgs.ACTION_REJECTED);
+    require(isImposter(msg.sender), ErrorMsgs.ACTION_REJECTED);
     
     players[target].alive = false;
 
     if (numAlivePlayers > 0) numAlivePlayers--;
 
-    checkWinConditions();
+    resolveWinConditionsByAlivePlayers();
   }
 
-  function isImposter(address playerToCheck) private view returns (bool isImposter_) {
-    for (uint i = 0; i < imposters.length; i++) {
-      if (imposters[i] == playerToCheck)
-        return true;
+  function cancelAllTasksInProgress() private {
+    for (uint i = 0; i < realOnes.length; i++) {
+      realOnesTaskInProgress[realOnes[i]].id = 0;
     }
-
-    return false;
   }
 
-  function checkWinConditions() private returns (bool winConditionMet) {
+  function resolveWinConditionsByAlivePlayers() private returns (bool winConditionMet) {
     uint aliveImposters = 0;
     for (uint i = 0; i < imposters.length; i++) {
       if (players[imposters[i]].alive)
@@ -305,8 +340,8 @@ contract GameManager {
     }
 
     if (aliveImposters <= 0) {
-      changeGameState(GameStates.Ended);
-      gameOutcome = GameOutcomes.RealOnesWin;
+      changeGameState(Enums.GameStates.Ended);
+      gameOutcome = Enums.GameOutcomes.RealOnesWin;
       return true;
     }
 
@@ -316,10 +351,39 @@ contract GameManager {
         aliveRealOnes++;
     }
 
-    if (aliveRealOnes <= 0) {
-      changeGameState(GameStates.Ended);
-      gameOutcome = GameOutcomes.ImpostersWin;
+    if (aliveRealOnes <= aliveImposters) {
+      changeGameState(Enums.GameStates.Ended);
+      gameOutcome = Enums.GameOutcomes.ImpostersWin;
       return true;
+    }
+
+    return false;
+  }
+
+  function resolveWinConditionsByTasks() private returns (bool winConditionMet) {
+    if (tasksCompleted >= numTasks * realOnes.length) {
+      changeGameState(Enums.GameStates.Ended);
+      gameOutcome = Enums.GameOutcomes.RealOnesWin;
+      return true;
+    }
+
+    return false;
+  }
+
+  function isCompletedTask(uint taskId) private view returns (bool completed) {
+    uint[] memory completedTasks = realOnesCompletedTasks[msg.sender];
+
+    for (uint i = 0; i < completedTasks.length; i++) {
+      if (completedTasks[i] == taskId)
+        return true;
+    }
+    return false;
+  }
+
+  function isImposter(address playerToCheck) private view returns (bool isImposter_) {
+    for (uint i = 0; i < imposters.length; i++) {
+      if (imposters[i] == playerToCheck)
+        return true;
     }
 
     return false;

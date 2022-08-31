@@ -3,29 +3,12 @@ pragma solidity ^0.8.13;
 
 import "forge-std/Test.sol";
 import "../src/GameManager.sol";
+import "../src/Structs.sol";
+import "../src/Enums.sol";
+import "../src/Errors.sol";
 
 contract GameManagerTest is Test {
   using stdStorage for StdStorage;
-
-  enum GameStates { 
-    NotStarted, 
-    Started, 
-    Ended,
-    Voting
-  }
-  enum GameActions {
-    CompleteTask,
-    KillPlayer
-  }
-  enum GameOutcomes {
-    Stalemate,
-    ImpostersWin,
-    RealOnesWin
-  }
-  struct PlayerState {
-    bool joined;
-    bool alive;
-  }
 
   address[] private players = [
     address(1),
@@ -39,8 +22,6 @@ contract GameManagerTest is Test {
     address(9),
     address(10)
   ];
-
-  address[] imposters;
 
   GameManager public gameManager;
 
@@ -90,7 +71,7 @@ contract GameManagerTest is Test {
     stdstore
       .target(address(gameManager))
       .sig("gameState()")
-      .checked_write(uint(GameStates.Started));
+      .checked_write(uint(Enums.GameStates.Started));
 
     // act & assert
     vm.expectRevert(bytes("Current game state does not allow joining"));
@@ -136,7 +117,7 @@ contract GameManagerTest is Test {
     stdstore
       .target(address(gameManager))
       .sig("gameState()")
-      .checked_write(uint(GameStates.Started));
+      .checked_write(uint(Enums.GameStates.Started));
 
     // act & assert
     vm.expectRevert(bytes("Current game state does not allow starting game"));
@@ -166,13 +147,13 @@ contract GameManagerTest is Test {
     gameManager.start();
 
     // assert
-    assertEq(uint(gameManager.gameState()), uint(GameStates.Started));
+    assertEq(uint(gameManager.gameState()), uint(Enums.GameStates.Started));
   }
 
   function testCannotDoActionWhenNotStarted() public {
     gameManager.join();
     vm.expectRevert(bytes("Current game state does not allow actions"));
-    gameManager.doAction(uint(GameActions.CompleteTask), address(0));
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 1);
   }
 
   function testCannotDoActionWhenEnded() public {
@@ -181,26 +162,90 @@ contract GameManagerTest is Test {
     stdstore
       .target(address(gameManager))
       .sig("gameState()")
-      .checked_write(uint(GameStates.Ended));
+      .checked_write(uint(Enums.GameStates.Ended));
 
     // act & assert
     vm.expectRevert(bytes("Current game state does not allow actions"));
-    gameManager.doAction(uint(GameActions.CompleteTask), address(0));
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 1);
+  }
+
+  function testCannotStartTaskIfAlreadyStarted() public {
+    // arrange
+    startGame(4);
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 1);
+
+    // act & assert
+    vm.expectRevert(bytes(ErrorMsgs.ACTION_REJECTED));
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 2);
+  }
+
+  function testCannotFinishTaskIfNotEnoughTimePassed() public {
+    // arrange
+    startGame(4);
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 2);
+
+    // act & assert
+    vm.expectRevert(bytes(ErrorMsgs.ACTION_REJECTED));
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 2);
   }
 
   function testCompleteTask() public {
     // arrange
-    gameManager.join();
-    stdstore
-      .target(address(gameManager))
-      .sig("gameState()")
-      .checked_write(uint(GameStates.Started));
+    startGame(4);
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 1);
 
     // act
-    gameManager.doAction(uint(GameActions.CompleteTask), address(0));
+    skip(10);
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 1);
 
     // assert
-    assertEq(gameManager.points(), 1);
+    assertEq(gameManager.tasksCompleted(), 1);
+  }
+
+  function testCompleteTaskWhenDead() public {
+    // arrange
+    startGame(4);
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 1);
+    changePrank(players[0]);
+    gameManager.doAction(uint(Enums.GameActions.KillPlayer), players[3], 0);
+
+    // act
+    skip(10);
+    changePrank(players[3]);
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 1);
+
+    // assert
+    (, bool alive,) = gameManager.players(players[3]);
+    assertFalse(alive);
+    assertEq(gameManager.tasksCompleted(), 1);
+  }
+
+  function testLeaveStartedTask() public {
+    // arrange
+    startGame(4);
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 1);
+
+    // act
+    skip(100);
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 0);
+
+    // assert
+    gameManager.callVote();
+    assertEq(gameManager.tasksCompleted(), 0);
+  }
+
+  function testDoTaskAsImposterDoesNotIncrementCompletedTasks() public {
+    // arrange
+    startGame(4);
+    changePrank(players[0]);
+
+    // act
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 1);
+    skip(10);
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 1);
+
+    // assert
+    assertEq(gameManager.tasksCompleted(), 0);
   }
 
   function testCannotDoActionWhenNotJoined() public {
@@ -208,22 +253,22 @@ contract GameManagerTest is Test {
     stdstore
       .target(address(gameManager))
       .sig("gameState()")
-      .checked_write(uint(GameStates.Started));
+      .checked_write(uint(Enums.GameStates.Started));
 
     // act
     vm.expectRevert(bytes("Player did not join this game"));
-    gameManager.doAction(uint(GameActions.CompleteTask), address(0));
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 1);
   }
 
   function testCannotKillDeadPlayer() public {
     // arrange
     startGame(4);
     changePrank(players[0]);
-    gameManager.doAction(uint(GameActions.KillPlayer), players[1]);
+    gameManager.doAction(uint(Enums.GameActions.KillPlayer), players[1], 0);
 
     // act & assert
-    vm.expectRevert(bytes("Action rejected"));
-    gameManager.doAction(uint(GameActions.KillPlayer), players[1]);
+    vm.expectRevert(bytes(ErrorMsgs.ACTION_REJECTED));
+    gameManager.doAction(uint(Enums.GameActions.KillPlayer), players[1], 0);
   }
 
   function testCannotKillPlayerNotJoined() public {
@@ -235,20 +280,20 @@ contract GameManagerTest is Test {
 
     // act & assert
     changePrank(players[0]);
-    vm.expectRevert(bytes("Action rejected"));
-    gameManager.doAction(uint(GameActions.KillPlayer), players[4]);
+    vm.expectRevert(bytes(ErrorMsgs.ACTION_REJECTED));
+    gameManager.doAction(uint(Enums.GameActions.KillPlayer), players[4], 0);
   }
 
   function testCannotKillWhileDead() public {
     // arrange
     startGame(10);
     changePrank(players[1]);
-    gameManager.doAction(uint(GameActions.KillPlayer), players[0]);
+    gameManager.doAction(uint(Enums.GameActions.KillPlayer), players[0], 0);
 
     // act & assert
     changePrank(players[0]);
-    vm.expectRevert(bytes("Action rejected"));
-    gameManager.doAction(uint(GameActions.KillPlayer), players[3]);
+    vm.expectRevert(bytes(ErrorMsgs.ACTION_REJECTED));
+    gameManager.doAction(uint(Enums.GameActions.KillPlayer), players[3], 0);
   }
 
   function testCannotKillIfNotImposter() public {
@@ -256,8 +301,8 @@ contract GameManagerTest is Test {
     startGame(4);
 
     // act & assert
-    vm.expectRevert("Action rejected");
-    gameManager.doAction(uint(GameActions.KillPlayer), players[1]);
+    vm.expectRevert(bytes(ErrorMsgs.ACTION_REJECTED));
+    gameManager.doAction(uint(Enums.GameActions.KillPlayer), players[1], 0);
   }
 
   function testKill() public {
@@ -266,7 +311,7 @@ contract GameManagerTest is Test {
 
     // act
     changePrank(players[0]);
-    gameManager.doAction(uint(GameActions.KillPlayer), players[1]);
+    gameManager.doAction(uint(Enums.GameActions.KillPlayer), players[1], 0);
 
     // assert
     (, bool alive,) = gameManager.players(players[1]);
@@ -290,7 +335,7 @@ contract GameManagerTest is Test {
     stdstore
       .target(address(gameManager))
       .sig("gameState()")
-      .checked_write(uint(GameStates.Started));
+      .checked_write(uint(Enums.GameStates.Started));
     gameManager.callVote();
 
     // act & assert
@@ -302,7 +347,7 @@ contract GameManagerTest is Test {
     // arrange
     startGame(4);
     changePrank(players[0]);
-    gameManager.doAction(uint(GameActions.KillPlayer), players[1]);
+    gameManager.doAction(uint(Enums.GameActions.KillPlayer), players[1], 0);
 
     // act & assert
     changePrank(players[1]);
@@ -317,7 +362,7 @@ contract GameManagerTest is Test {
     stdstore
       .target(address(gameManager))
       .sig("gameState()")
-      .checked_write(uint(GameStates.Started));
+      .checked_write(uint(Enums.GameStates.Started));
 
     // act & assert
     vm.expectRevert(bytes("Call vote cooldown still in effect"));
@@ -344,19 +389,56 @@ contract GameManagerTest is Test {
     gameManager.callVote();
   }
 
+  function testCannotCallVoteIfDoingTask() public {
+    // arrange
+    startGame(4);
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 1);
+
+    // act & assert
+    vm.expectRevert("You are currently doing a task");
+    gameManager.callVote();
+  }
+
   function testCallVote() public {
     // arrange
     gameManager.join();
     stdstore
       .target(address(gameManager))
       .sig("gameState()")
-      .checked_write(uint(GameStates.Started));
+      .checked_write(uint(Enums.GameStates.Started));
 
     // act
     gameManager.callVote();
 
     // assert
-    assertEq(uint(gameManager.gameState()), uint(GameStates.Voting));    
+    assertEq(uint(gameManager.gameState()), uint(Enums.GameStates.Voting));    
+  }
+
+  function testCallVoteCancelsAllTasksInProgress() public {
+    // arrange
+    startGame(4);
+    changePrank(players[1]);
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 1);
+    changePrank(players[2]);
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 1);
+    changePrank(players[3]);
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 1);
+
+    // act
+    changePrank(players[0]);
+    gameManager.callVote();
+    stdstore
+      .target(address(gameManager))
+      .sig("gameState()")
+      .checked_write(uint(Enums.GameStates.Started));
+
+    // assert
+    changePrank(players[1]);
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 1);
+    changePrank(players[2]);
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 2);
+    changePrank(players[3]);
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 2);
   }
 
   function testCannotVoteWhenNotInVoteCall() public {
@@ -379,7 +461,7 @@ contract GameManagerTest is Test {
     // arrange
     startGame(4);
     changePrank(players[0]);
-    gameManager.doAction(uint(GameActions.KillPlayer), players[2]);
+    gameManager.doAction(uint(Enums.GameActions.KillPlayer), players[2], 0);
     gameManager.callVote();
 
     // act & assert
@@ -394,7 +476,7 @@ contract GameManagerTest is Test {
     stdstore
       .target(address(gameManager))
       .sig("gameState()")
-      .checked_write(uint(GameStates.Voting));
+      .checked_write(uint(Enums.GameStates.Voting));
 
     // act & assert
     vm.expectRevert(bytes("Player did not join this game"));
@@ -405,7 +487,7 @@ contract GameManagerTest is Test {
     // arrange
     startGame(4);
     changePrank(players[0]);
-    gameManager.doAction(uint(GameActions.KillPlayer), players[1]);
+    gameManager.doAction(uint(Enums.GameActions.KillPlayer), players[1], 0);
     gameManager.callVote();
     
     // act & assert
@@ -421,7 +503,7 @@ contract GameManagerTest is Test {
     stdstore
       .target(address(gameManager))
       .sig("gameState()")
-      .checked_write(uint(GameStates.Voting));
+      .checked_write(uint(Enums.GameStates.Voting));
     gameManager.vote(players[0]);
 
     // act & assert
@@ -444,7 +526,7 @@ contract GameManagerTest is Test {
     gameManager.vote(players[1]);
 
     // assert
-    assertEq(uint(gameManager.gameState()), uint(GameStates.Started));
+    assertEq(uint(gameManager.gameState()), uint(Enums.GameStates.Started));
     assertEq(gameManager.votes(1, players[1]), 4);
   }
 
@@ -488,7 +570,7 @@ contract GameManagerTest is Test {
     assertFalse(alive);
 
     // assert - game state is started
-    assertEq(uint(gameManager.gameState()), uint(GameStates.Started));
+    assertEq(uint(gameManager.gameState()), uint(Enums.GameStates.Started));
 
     // assert - reset votes
     assertEq(gameManager.numVotes(), 0);
@@ -571,20 +653,20 @@ contract GameManagerTest is Test {
     assertEq(gameManager.getImposterCount(), 2);
     assertEq(gameManager.getRealOnesCount(), 8);
   }
-
+  
+  //  Real One per Imposter left
   function testImpostersWinByKills() public {
     // arrange
     startGame(4);
 
     // act
     changePrank(players[0]);
-    gameManager.doAction(uint(GameActions.KillPlayer), players[1]);
-    gameManager.doAction(uint(GameActions.KillPlayer), players[2]);
-    gameManager.doAction(uint(GameActions.KillPlayer), players[3]);
+    gameManager.doAction(uint(Enums.GameActions.KillPlayer), players[1], 0);
+    gameManager.doAction(uint(Enums.GameActions.KillPlayer), players[2], 0);
 
     // assert
-    assertEq(uint(gameManager.gameState()), uint(GameStates.Ended));
-    assertEq(uint(gameManager.gameOutcome()), uint(GameOutcomes.ImpostersWin));
+    assertEq(uint(gameManager.gameState()), uint(Enums.GameStates.Ended));
+    assertEq(uint(gameManager.gameOutcome()), uint(Enums.GameOutcomes.ImpostersWin));
   }
 
   function testRealOnesWinByVote() public {
@@ -603,8 +685,70 @@ contract GameManagerTest is Test {
     gameManager.vote(players[0]);
 
     // assert
-    assertEq(uint(gameManager.gameState()), uint(GameStates.Ended));
-    assertEq(uint(gameManager.gameOutcome()), uint(GameOutcomes.RealOnesWin));
+    assertEq(uint(gameManager.gameState()), uint(Enums.GameStates.Ended));
+    assertEq(uint(gameManager.gameOutcome()), uint(Enums.GameOutcomes.RealOnesWin));
+  }
+
+  function testRealOnesWinByTasks() public {
+    // arrange
+    startGame(4);
+
+    // act - player 4 finishes all tasks
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 1);
+    skip(10);
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 1);
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 2);
+    skip(20);
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 2);
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 3);
+    skip(30);
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 3);
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 4);
+    skip(40);
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 4);
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 5);
+    skip(50);
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 5);
+
+    // act - player 3 finishes all tasks
+    changePrank(players[2]);
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 1);
+    skip(10);
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 1);
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 2);
+    skip(20);
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 2);
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 3);
+    skip(30);
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 3);
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 4);
+    skip(40);
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 4);
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 5);
+    skip(50);
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 5);
+
+    // act - player 2 finishes all tasks
+    changePrank(players[1]);
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 1);
+    skip(10);
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 1);
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 2);
+    skip(20);
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 2);
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 3);
+    skip(30);
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 3);
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 4);
+    skip(40);
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 4);
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 5);
+    skip(50);
+    gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 5);
+
+    // assert
+    assertEq(uint(gameManager.gameState()), uint(Enums.GameStates.Ended));
+    assertEq(uint(gameManager.gameOutcome()), uint(Enums.GameOutcomes.RealOnesWin));
   }
 
   // Helper functions
