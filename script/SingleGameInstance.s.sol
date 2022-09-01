@@ -10,7 +10,7 @@ contract SingleGameInstanceScript is Script {
     function run() public {
         vm.startBroadcast();
 
-        GameManager gameInstance = new GameManager(10, 4, 10);
+        GameManager gameInstance = new GameManager(10, 4, 10, false);
 
         vm.stopBroadcast();
     }
