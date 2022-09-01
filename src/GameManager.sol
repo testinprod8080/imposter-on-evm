@@ -16,6 +16,7 @@ contract GameManager {
   uint immutable minPlayers;
   uint immutable voteCallCooldown;
   uint immutable numTasks = 5;
+  bool immutable testing;
 
   uint public lastVoteCallTimestamp;
   uint public numAlivePlayers = 0;
@@ -63,7 +64,8 @@ contract GameManager {
   constructor(
     uint maxPlayers_, 
     uint minPlayers_, 
-    uint voteCallCooldown_
+    uint voteCallCooldown_,
+    bool testing_
   ) {
     require(minPlayers_ > 3, "Need at least four players");
     require(minPlayers_ <= maxPlayers_, "Minimum players must be less than max");
@@ -71,6 +73,7 @@ contract GameManager {
     maxPlayers = maxPlayers_;
     minPlayers = minPlayers_;
     voteCallCooldown = voteCallCooldown_;
+    testing = testing_;
 
     tasks[1] = 10;
     tasks[2] = 20;
@@ -266,25 +269,24 @@ contract GameManager {
     playerAddresses.pop();
   }
 
+  // TODO abstract out as contract calls
   function setTeams(string memory salt) private {
     uint numImposters = playerAddresses.length / 4;
 
-    // uint[] memory imposterIndices = RandomHelper.pickRandomFromArray(
-    //   numImposters, 
-    //   playerAddresses.length, 
-    //   salt
-    // );
-
-    // for (uint i = 0; i < imposterIndices.length; i++) {
-    //   imposters.push(playerAddresses[imposterIndices[i]]);
-    // }
-
-    for (uint i = 0; i < playerAddresses.length; i++) {
-      // TODO needs to be random
-      if (imposters.length < numImposters)
-        imposters.push(playerAddresses[i]);
-      else
-        realOnes.push(playerAddresses[i]);
+    if (testing == false) {
+      (imposters, realOnes) = RandomHelper.pickRandomFromArray(
+        numImposters, 
+        playerAddresses, 
+        salt
+      );
+    } else {
+      for (uint i = 0; i < playerAddresses.length; i++) {
+        // TODO needs to be random
+        if (imposters.length < numImposters)
+          imposters.push(playerAddresses[i]);
+        else
+          realOnes.push(playerAddresses[i]);
+      }
     }
   }
 
@@ -371,7 +373,7 @@ contract GameManager {
     return false;
   }
 
-  function resolveWinConditionsByTasks() private returns (bool winConditionMet) {
+  function resolveWinConditionsByTasks() private returns (bool) {
     if (tasksCompleted >= numTasks * realOnes.length) {
       changeGameState(Enums.GameStates.Ended);
       gameOutcome = Enums.GameOutcomes.RealOnesWin;
@@ -381,7 +383,7 @@ contract GameManager {
     return false;
   }
 
-  function isCompletedTask(uint taskId) private view returns (bool completed) {
+  function isCompletedTask(uint taskId) private view returns (bool) {
     uint[] memory completedTasks = realOnesCompletedTasks[msg.sender];
 
     for (uint i = 0; i < completedTasks.length; i++) {
@@ -391,7 +393,7 @@ contract GameManager {
     return false;
   }
 
-  function isImposter(address playerToCheck) private view returns (bool isImposter_) {
+  function isImposter(address playerToCheck) private view returns (bool) {
     for (uint i = 0; i < imposters.length; i++) {
       if (imposters[i] == playerToCheck)
         return true;

@@ -11,6 +11,7 @@ contract GameManagerTest is Test {
   using stdStorage for StdStorage;
 
   address[] private players = [
+    address(0),
     address(1),
     address(2),
     address(3),
@@ -19,25 +20,24 @@ contract GameManagerTest is Test {
     address(6),
     address(7),
     address(8),
-    address(9),
-    address(10)
+    address(9)
   ];
 
   GameManager public gameManager;
 
   function setUp() public {
-    gameManager = new GameManager(10, 4, 0);
+    gameManager = new GameManager(10, 4, 0, true);
     vm.startPrank(players[0]);
   }
 
   function testCannotHaveOneMinPlayer() public {
     vm.expectRevert(bytes("Need at least four players"));
-    new GameManager(4, 3, 0);
+    new GameManager(4, 3, 0, true);
   }
 
   function testCannotHaveMoreMinThanMaxPlayers() public {
     vm.expectRevert(bytes("Minimum players must be less than max"));
-    new GameManager(0, 4, 0);
+    new GameManager(0, 4, 0, true);
   }
 
   function testCannotJoinTwice() public {
@@ -51,7 +51,7 @@ contract GameManagerTest is Test {
 
   function testCannotJoinFullGame() public {
     // arrange
-    gameManager = new GameManager(4, 4, 0);
+    gameManager = new GameManager(4, 4, 0, true);
     gameManager.join();
     changePrank(players[1]);
     gameManager.join();
@@ -171,7 +171,7 @@ contract GameManagerTest is Test {
 
   function testCannotStartTaskIfAlreadyStarted() public {
     // arrange
-    startGame(4);
+    startGame(4, "");
     gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 1);
 
     // act & assert
@@ -181,7 +181,7 @@ contract GameManagerTest is Test {
 
   function testCannotFinishTaskIfNotEnoughTimePassed() public {
     // arrange
-    startGame(4);
+    startGame(4, "");
     gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 2);
 
     // act & assert
@@ -191,7 +191,7 @@ contract GameManagerTest is Test {
 
   function testCompleteTask() public {
     // arrange
-    startGame(4);
+    startGame(4, "");
     gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 1);
 
     // act
@@ -204,7 +204,7 @@ contract GameManagerTest is Test {
 
   function testCompleteTaskWhenDead() public {
     // arrange
-    startGame(4);
+    startGame(4, "");
     gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 1);
     changePrank(players[0]);
     gameManager.doAction(uint(Enums.GameActions.KillPlayer), players[3], 0);
@@ -222,7 +222,7 @@ contract GameManagerTest is Test {
 
   function testLeaveStartedTask() public {
     // arrange
-    startGame(4);
+    startGame(4, "");
     gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 1);
 
     // act
@@ -236,7 +236,7 @@ contract GameManagerTest is Test {
 
   function testDoTaskAsImposterDoesNotIncrementCompletedTasks() public {
     // arrange
-    startGame(4);
+    startGame(4, "");
     changePrank(players[0]);
 
     // act
@@ -262,7 +262,7 @@ contract GameManagerTest is Test {
 
   function testCannotKillDeadPlayer() public {
     // arrange
-    startGame(4);
+    startGame(4, "");
     changePrank(players[0]);
     gameManager.doAction(uint(Enums.GameActions.KillPlayer), players[1], 0);
 
@@ -276,7 +276,7 @@ contract GameManagerTest is Test {
     changePrank(players[4]);
     gameManager.join();
     gameManager.leave();
-    startGame(4);
+    startGame(4, "");
 
     // act & assert
     changePrank(players[0]);
@@ -286,7 +286,7 @@ contract GameManagerTest is Test {
 
   function testCannotKillWhileDead() public {
     // arrange
-    startGame(10);
+    startGame(10, "");
     changePrank(players[1]);
     gameManager.doAction(uint(Enums.GameActions.KillPlayer), players[0], 0);
 
@@ -298,7 +298,7 @@ contract GameManagerTest is Test {
 
   function testCannotKillIfNotImposter() public {
     // arrange
-    startGame(4);
+    startGame(4, "");
 
     // act & assert
     vm.expectRevert(bytes(ErrorMsgs.ACTION_REJECTED));
@@ -307,7 +307,7 @@ contract GameManagerTest is Test {
 
   function testKill() public {
     // arrange
-    startGame(4);
+    startGame(4, "");
 
     // act
     changePrank(players[0]);
@@ -345,7 +345,7 @@ contract GameManagerTest is Test {
 
   function testCannotCallVoteIfDead() public {
     // arrange
-    startGame(4);
+    startGame(4, "");
     changePrank(players[0]);
     gameManager.doAction(uint(Enums.GameActions.KillPlayer), players[1], 0);
 
@@ -357,7 +357,7 @@ contract GameManagerTest is Test {
 
   function testCannotCallVoteUntilCooldownAfterStart() public {
     // arrange
-    gameManager = new GameManager(4, 4, 10);
+    gameManager = new GameManager(4, 4, 10, true);
     gameManager.join();
     stdstore
       .target(address(gameManager))
@@ -372,8 +372,8 @@ contract GameManagerTest is Test {
   function testCannotCallVoteUntilCooldownAfterLastVoteCall() public {
     // arrange
     uint VOTECALL_COOLDOWN = 10;
-    gameManager = new GameManager(4, 4, VOTECALL_COOLDOWN);
-    startGame(4);
+    gameManager = new GameManager(4, 4, VOTECALL_COOLDOWN, true);
+    startGame(4, "");
     skip(VOTECALL_COOLDOWN);
     gameManager.callVote();
     gameManager.vote(players[1]);
@@ -391,7 +391,7 @@ contract GameManagerTest is Test {
 
   function testCannotCallVoteIfDoingTask() public {
     // arrange
-    startGame(4);
+    startGame(4, "");
     gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 1);
 
     // act & assert
@@ -416,7 +416,7 @@ contract GameManagerTest is Test {
 
   function testCallVoteCancelsAllTasksInProgress() public {
     // arrange
-    startGame(4);
+    startGame(4, "");
     changePrank(players[1]);
     gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 1);
     changePrank(players[2]);
@@ -459,7 +459,7 @@ contract GameManagerTest is Test {
 
   function testCannotVoteIfDead() public {
     // arrange
-    startGame(4);
+    startGame(4, "");
     changePrank(players[0]);
     gameManager.doAction(uint(Enums.GameActions.KillPlayer), players[2], 0);
     gameManager.callVote();
@@ -485,7 +485,7 @@ contract GameManagerTest is Test {
 
   function testCannotVoteForDeadPlayer() public {
     // arrange
-    startGame(4);
+    startGame(4, "");
     changePrank(players[0]);
     gameManager.doAction(uint(Enums.GameActions.KillPlayer), players[1], 0);
     gameManager.callVote();
@@ -513,7 +513,7 @@ contract GameManagerTest is Test {
 
   function testVote() public {
     // arrange
-    startGame(4);
+    startGame(4, "");
     gameManager.callVote();
 
     // act
@@ -532,7 +532,7 @@ contract GameManagerTest is Test {
 
   function testVoteNoPlayerDiesWhenTied() public {
     // arrange
-    startGame(4);
+    startGame(4, "");
     gameManager.callVote();
 
     // act
@@ -553,7 +553,7 @@ contract GameManagerTest is Test {
 
   function testVotePlayerDiesAndSetsGameBackToStarted() public {
     // arrange
-    startGame(4);
+    startGame(4, "");
     gameManager.callVote();
 
     // act
@@ -578,7 +578,7 @@ contract GameManagerTest is Test {
 
   function testVoteMultiRoundMultipleDead() public {
     // arrange
-    startGame(4);
+    startGame(4, "");
     gameManager.callVote();
 
     gameManager.vote(players[0]);
@@ -657,7 +657,7 @@ contract GameManagerTest is Test {
   //  Real One per Imposter left
   function testImpostersWinByKills() public {
     // arrange
-    startGame(4);
+    startGame(4, "");
 
     // act
     changePrank(players[0]);
@@ -671,7 +671,7 @@ contract GameManagerTest is Test {
 
   function testRealOnesWinByVote() public {
     // arrange
-    startGame(4);
+    startGame(4, "");
 
     // act
     gameManager.callVote();
@@ -691,7 +691,7 @@ contract GameManagerTest is Test {
 
   function testRealOnesWinByTasks() public {
     // arrange
-    startGame(4);
+    startGame(4, "");
 
     // act - player 4 finishes all tasks
     gameManager.doAction(uint(Enums.GameActions.CompleteTask), address(0), 1);
@@ -752,11 +752,11 @@ contract GameManagerTest is Test {
   }
 
   // Helper functions
-  function startGame(uint numPlayers) private {
+  function startGame(uint numPlayers, string memory salt) private {
     for (uint i = 0; i < numPlayers; i++) {
       changePrank(players[i]);
       gameManager.join();
     }
-    gameManager.start("");
+    gameManager.start(salt);
   }
 }

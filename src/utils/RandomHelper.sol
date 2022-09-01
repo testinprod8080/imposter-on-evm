@@ -2,24 +2,45 @@
 pragma solidity ^0.8.16;
 
 library RandomHelper {
-  function pickRandomFromArray(uint numOfPicks, uint arraySize, string memory salt
+  function pickRandomFromArray(
+    uint numOfPicks, 
+    address[] memory addresses, 
+    string memory salt
   ) 
     external 
     view
-    returns (uint[] memory indices_) 
+    returns (address[] memory pickedArray_, address[] memory remainderArray_) 
   {
-    uint[] memory indices = new uint[](numOfPicks);
+    require(addresses.length > numOfPicks, "Pick less than the size of the array");
 
-    // last number is 0 most of the time, so add one and discard last number
-    for (uint i = 0; i < numOfPicks; i++) {
-      uint num = getPseudoRandom(arraySize, i, salt, indices);
-      indices[i] = num;
+    uint[] memory pickedIndices = new uint[](numOfPicks);
+    address[] memory pickedArray = new address[](numOfPicks);
+    bool[] memory isPicked = new bool[](addresses.length);
+
+    for (uint i = 0; i < numOfPicks; i++) { 
+      uint num = getPseudoRandomNumber(addresses, i, salt, pickedIndices);
+      pickedIndices[i] = num;
+      pickedArray[i] = addresses[num];
+      isPicked[num] = true;
     }
-    return indices;
+
+    // put any addresses not picked into remainder array
+    address[] memory remainderArray = new address[](addresses.length - numOfPicks);
+
+    uint remainderCounter = 0;
+    for (uint i = 0; i < addresses.length; i++) {
+      if (isPicked[i])
+        continue;
+      
+      remainderArray[remainderCounter] = addresses[i];
+      remainderCounter++;
+    }
+
+    return (pickedArray, remainderArray);
   }
 
-  function getPseudoRandom(
-    uint arraySize, 
+  function getPseudoRandomNumber(
+    address[] memory addresses, 
     uint index, 
     string memory salt,
     uint[] memory pickedNumArray
@@ -32,26 +53,42 @@ library RandomHelper {
       salt,
       block.difficulty,
       block.timestamp,
-      index
-    ))) % arraySize;
+      index,
+      addresses
+    ))) % addresses.length;
 
-    return getNextIfAlreadyPicked(pseudoRandomNum, pickedNumArray);
+    return getNextIfAlreadyPicked(pseudoRandomNum, pickedNumArray, addresses.length);
   }
 
-  function getNextIfAlreadyPicked(uint numToCheck, uint[] memory array) 
+  function getNextIfAlreadyPicked(
+    uint numToCheck, 
+    uint[] memory numPickArray, 
+    uint arraySize
+  ) 
     private 
     pure 
     returns (uint) 
   {
-    if (isPicked(numToCheck, array))
-      return getNextIfAlreadyPicked(numToCheck + 1, array);
+    if (checkIfPicked(numToCheck, numPickArray)) {
+      uint newNumToCheck;
+      if (numToCheck == arraySize - 1)
+        newNumToCheck = 0;
+      else
+        newNumToCheck = numToCheck + 1;
+
+      return getNextIfAlreadyPicked(newNumToCheck, numPickArray, arraySize);
+    }
     else
       return numToCheck;
   }
 
-  function isPicked(uint numToCheck, uint[] memory array) private pure returns (bool) {
-    for (uint i = 0; i < array.length; i++) {
-      if (array[i] == numToCheck)
+  function checkIfPicked(uint numToCheck, uint[] memory numPickArray) 
+    private 
+    pure 
+    returns (bool) 
+  {
+    for (uint i = 0; i < numPickArray.length; i++) {
+      if (numPickArray[i] == numToCheck)
         return true;
     }
     return false;

@@ -42,6 +42,14 @@ For Real Ones, completing a task requires two actions:
 
 When a Real One has started a task, they cannot perform any other tasks unless they finish, leave unfinished, or a vote is called.
 
+## Randomness
+
+Splitting players into teams requires randomness so that it is not easy to determine team membership. After all, not knowing if a player is an Imposter is a core game mechanic.
+
+We cannot achieve true randomness onchain, so the current solution creates a pseudorandom outcome when splitting into teams. It is possible to determine team membership ahead of time, so we advise not to put any financial stake into the game outcome until true randomness is achieved.
+
+In the future, we hope to make use of Chainlink's VRF or an offchain solution.
+
 # Versions
 ## v0.1
 - [x] Players will be able to play using a manually deployed contract. 
@@ -53,7 +61,7 @@ When a Real One has started a task, they cannot perform any other tasks unless t
   - [x] killPlayer
   - [x] callVote
   - [x] vote
-  - [ ] pseudo random imposter assignment
+  - [x] pseudo random imposter assignment
 - [ ] UI - specify contract address
   - [ ] join / leave
   - [ ] player list

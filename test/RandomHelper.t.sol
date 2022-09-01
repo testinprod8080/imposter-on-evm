@@ -6,47 +6,59 @@ import "../src/utils/RandomHelper.sol";
 
 contract GameManagerTest is Test {
 
+  address[] private addresses = [
+    address(0),
+    address(1),
+    address(2),
+    address(3),
+    address(4),
+    address(5),
+    address(6),
+    address(7),
+    address(8),
+    address(9)
+  ];
+
   function setUp() public {}
 
   function testRandomPickerFromArray() public {
     // arrange
-    uint randomPicks = 1;
+    uint randomPicks = 3;
     vm.difficulty(1000000080948);
     vm.warp(16410708038948390);
 
     // act
-    uint[] memory results = RandomHelper.pickRandomFromArray(
+    (address[] memory pickedArray, address[] memory remainderArray) = RandomHelper.pickRandomFromArray(
       randomPicks, 
-      4,
+      addresses,
       "mySaltdlsajdoejodjlajaskllkdsfjoshfoshe"
     );
     
     // assert
-    assertEq(results.length, randomPicks);
-    for (uint i = 0; i < results.length; i++){
-      console.logUint(results[i]);
-    }
+    assertEq(pickedArray.length, randomPicks);
+    assertEq(remainderArray.length, addresses.length - randomPicks);
   }
 
   function testFuzzRandomPickerFromArray(
       uint randomPicks, 
-      uint arraySize,
       string memory salt
   ) public {
+    address[] memory pickedArray;
+    address[] memory remainderArray;
+
     // arrange
-    arraySize = bound(arraySize, 4, 100);
-    require(arraySize >= 1 && arraySize <= 100);
-    randomPicks = bound(randomPicks, 1, arraySize);
-    require(randomPicks >= 1 && randomPicks <= arraySize);
+    randomPicks = bound(randomPicks, 1, addresses.length - 1);
+    require(randomPicks >= 1 && randomPicks < addresses.length);
 
     // act
-    uint[] memory results = RandomHelper.pickRandomFromArray(
+    (pickedArray, remainderArray) = RandomHelper.pickRandomFromArray(
       randomPicks, 
-      arraySize,
+      addresses,
       salt
     );
     
     // assert
-    assertEq(results.length, randomPicks);
+    assertEq(pickedArray.length, randomPicks);
+    assertEq(remainderArray.length, addresses.length - randomPicks);
   }
 }
