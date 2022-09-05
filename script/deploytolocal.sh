@@ -8,7 +8,7 @@ forge script script/SingleGameInstance.s.sol:SingleGameInstanceScript \
  --private-key $PRIVATE_KEY0 --broadcast
 
 #  Afterwards, set contract address to env
-# echo CONTRACT_ADDRESS=0xe7f1725e7734ce288f8367e1bb143e90bb3f0512
+# export CONTRACT_ADDRESS=0xe7f1725e7734ce288f8367e1bb143e90bb3f0512
 # 
 # Example calls:
 # cast call $CONTRACT_ADDRESS "getFunc():string"
