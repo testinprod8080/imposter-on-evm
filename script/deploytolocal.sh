@@ -1,7 +1,7 @@
 # run Anvil first
 # anvil -a <num of accounts>
 
-source .env \
+source .env.local \
 
 forge script script/SingleGameInstance.s.sol:SingleGameInstanceScript \
  --fork-url $FORK_URL \
